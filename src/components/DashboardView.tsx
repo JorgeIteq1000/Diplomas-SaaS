@@ -1,155 +1,157 @@
-import React from 'react';
-import { 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer 
-} from 'recharts';
-import { 
-  GraduationCap, 
-  Clock, 
-  Zap, 
-  Users,
-  CheckCircle2,
-  AlertCircle,
-  Loader2
-} from 'lucide-react';
-import { cn } from '../lib/utils';
+import React, { useState, useEffect } from 'react';
+import { Users, FileCheck, BrainCircuit, Activity, Loader2 } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { supabase } from '../lib/supabaseClient';
 
-const data = [
-  { name: '01/03', value: 400 },
-  { name: '05/03', value: 300 },
-  { name: '10/03', value: 600 },
-  { name: '15/03', value: 800 },
-  { name: '20/03', value: 500 },
-  { name: '25/03', value: 900 },
-  { name: '30/03', value: 1200 },
-];
+const DashboardView: React.FC = () => {
+  const [metricas, setMetricas] = useState({
+    emitidos: 0,
+    naFila: 0,
+    taxaSucesso: 0,
+    totalProcessados: 0
+  });
+  const [lotesRecentes, setLotesRecentes] = useState<any[]>([]);
+  const [dadosGrafico, setDadosGrafico] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-const metrics = [
-  { label: 'Diplomas Emitidos (Mês)', value: '4.280', change: '+12%', icon: GraduationCap, color: 'text-blue-600', bg: 'bg-blue-50' },
-  { label: 'Economia de Horas (ROI)', value: '840h', change: '+18%', icon: Clock, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-  { label: 'Taxa de Sucesso IA', value: '98.4%', change: '+0.2%', icon: Zap, color: 'text-amber-600', bg: 'bg-amber-50' },
-  { label: 'Alunos em Fila', value: '156', change: '-5%', icon: Users, color: 'text-slate-600', bg: 'bg-slate-50' },
-];
+  useEffect(() => {
+    const carregarDados = async () => {
+      try {
+        setLoading(true);
+        // 1. Buscar Alunos para Métricas
+        const { data: alunos, error: errAlunos } = await supabase.from('alunos_dossie').select('status, data_processamento');
+        if (errAlunos) throw errAlunos;
 
-const recentBatches = [
-  { id: 'LOTE-001', name: 'Engenharia de Software - 2023.2', date: '21/03/2024', status: 'completed', count: 120 },
-  { id: 'LOTE-002', name: 'Medicina - Campus Central', date: '21/03/2024', status: 'processing', count: 45 },
-  { id: 'LOTE-003', name: 'Direito - Noturno', date: '20/03/2024', status: 'error', count: 88 },
-];
+        const emitidos = alunos.filter(a => a.status === 'EMITIDO_SOLIS').length;
+        const naFila = alunos.filter(a => a.status === 'AGUARDANDO_ROBO' || a.status === 'EM_ANALISE_IA').length;
+        const comErro = alunos.filter(a => a.status === 'REPROVADO_IA' || a.status === 'REPROVADO_ROTA').length;
+        const totalProcessados = emitidos + comErro;
+        const taxaSucesso = totalProcessados > 0 ? Math.round((emitidos / totalProcessados) * 100) : 0;
 
-export function DashboardView() {
+        setMetricas({ emitidos, naFila, taxaSucesso, totalProcessados });
+
+        // 2. Buscar Lotes Recentes
+        const { data: lotes } = await supabase.from('lotes').select('*').order('data_criacao', { ascending: false }).limit(5);
+        if (lotes) setLotesRecentes(lotes);
+
+        // 3. Simular dados do gráfico com base nos últimos 7 dias (para ter volume visual)
+        const mockGrafico = [
+          { name: 'Seg', emissoes: Math.floor(emitidos * 0.1) },
+          { name: 'Ter', emissoes: Math.floor(emitidos * 0.2) },
+          { name: 'Qua', emissoes: Math.floor(emitidos * 0.15) },
+          { name: 'Qui', emissoes: Math.floor(emitidos * 0.3) },
+          { name: 'Sex', emissoes: Math.floor(emitidos * 0.25) },
+          { name: 'Sáb', emissoes: 0 },
+          { name: 'Dom', emissoes: emitidos > 0 ? 1 : 0 },
+        ];
+        setDadosGrafico(mockGrafico);
+
+      } catch (error) {
+        console.error('Erro ao carregar dashboard:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    carregarDados();
+  }, []);
+
+  if (loading) return <div className="flex h-full items-center justify-center"><Loader2 className="w-10 h-10 animate-spin text-blue-600" /></div>;
+
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <header>
-        <h1 className="text-2xl font-bold text-slate-900">Visão Geral</h1>
-        <p className="text-slate-500">Bem-vindo ao AutoCert AI. Aqui está o resumo das operações.</p>
-      </header>
-
-      {/* Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {metrics.map((m) => (
-          <div key={m.label} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-            <div className="flex justify-between items-start mb-4">
-              <div className={cn("p-2 rounded-lg", m.bg)}>
-                <m.icon className={cn("w-6 h-6", m.color)} />
-              </div>
-              <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
-                {m.change}
-              </span>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm text-slate-500 font-medium">{m.label}</p>
-              <p className="text-2xl font-bold text-slate-900">{m.value}</p>
-            </div>
-          </div>
-        ))}
+    <div className="p-8 max-w-7xl mx-auto space-y-8">
+      <div>
+        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Visão Geral</h1>
+        <p className="text-slate-500 mt-1">Acompanha o desempenho do AutoCert AI em tempo real.</p>
       </div>
 
-      {/* Chart Section */}
-      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-        <h3 className="text-lg font-semibold mb-6">Volume de Emissões (30 dias)</h3>
-        <div className="h-[300px] w-full">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-sm font-medium text-slate-500 mb-1">Diplomas Emitidos</p>
+              <h3 className="text-3xl font-bold text-slate-900">{metricas.emitidos}</h3>
+            </div>
+            <div className="p-3 bg-emerald-100 rounded-lg text-emerald-600"><FileCheck className="w-6 h-6" /></div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-sm font-medium text-slate-500 mb-1">Taxa de Sucesso (IA)</p>
+              <h3 className="text-3xl font-bold text-slate-900">{metricas.taxaSucesso}%</h3>
+            </div>
+            <div className="p-3 bg-blue-100 rounded-lg text-blue-600"><BrainCircuit className="w-6 h-6" /></div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-sm font-medium text-slate-500 mb-1">Alunos na Fila</p>
+              <h3 className="text-3xl font-bold text-slate-900">{metricas.naFila}</h3>
+            </div>
+            <div className="p-3 bg-amber-100 rounded-lg text-amber-600"><Users className="w-6 h-6" /></div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-sm font-medium text-slate-500 mb-1">Total Processado</p>
+              <h3 className="text-3xl font-bold text-slate-900">{metricas.totalProcessados}</h3>
+            </div>
+            <div className="p-3 bg-purple-100 rounded-lg text-purple-600"><Activity className="w-6 h-6" /></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm h-[400px]">
+          <h3 className="text-lg font-bold text-slate-800 mb-6">Volume de Emissões (Últimos Dias)</h3>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis 
-                dataKey="name" 
-                axisLine={false} 
-                tickLine={false} 
-                tick={{ fill: '#94a3b8', fontSize: 12 }}
-                dy={10}
-              />
-              <YAxis 
-                axisLine={false} 
-                tickLine={false} 
-                tick={{ fill: '#94a3b8', fontSize: 12 }}
-              />
-              <Tooltip 
-                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="value" 
-                stroke="#2563eb" 
-                strokeWidth={3} 
-                dot={{ r: 4, fill: '#2563eb', strokeWidth: 2, stroke: '#fff' }}
-                activeDot={{ r: 6, strokeWidth: 0 }}
-              />
-            </LineChart>
+            <AreaChart data={dadosGrafico} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="colorEmissoes" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+              <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+              <Tooltip />
+              <Area type="monotone" dataKey="emissoes" stroke="#2563eb" strokeWidth={3} fillOpacity={1} fill="url(#colorEmissoes)" />
+            </AreaChart>
           </ResponsiveContainer>
         </div>
-      </div>
 
-      {/* Table Section */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-          <h3 className="text-lg font-semibold">Últimos Lotes Processados</h3>
-          <button className="text-sm text-blue-600 font-medium hover:underline">Ver todos</button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-              <tr>
-                <th className="px-6 py-4 font-semibold">ID do Lote</th>
-                <th className="px-6 py-4 font-semibold">Nome do Lote</th>
-                <th className="px-6 py-4 font-semibold">Data</th>
-                <th className="px-6 py-4 font-semibold">Alunos</th>
-                <th className="px-6 py-4 font-semibold">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {recentBatches.map((batch) => (
-                <tr key={batch.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-6 py-4 text-sm font-mono text-slate-600">{batch.id}</td>
-                  <td className="px-6 py-4 text-sm font-medium text-slate-900">{batch.name}</td>
-                  <td className="px-6 py-4 text-sm text-slate-500">{batch.date}</td>
-                  <td className="px-6 py-4 text-sm text-slate-500">{batch.count}</td>
-                  <td className="px-6 py-4">
-                    <span className={cn(
-                      "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium",
-                      batch.status === 'completed' && "bg-emerald-50 text-emerald-700",
-                      batch.status === 'processing' && "bg-blue-50 text-blue-700",
-                      batch.status === 'error' && "bg-red-50 text-red-700"
-                    )}>
-                      {batch.status === 'completed' && <CheckCircle2 className="w-3.5 h-3.5" />}
-                      {batch.status === 'processing' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                      {batch.status === 'error' && <AlertCircle className="w-3.5 h-3.5" />}
-                      {batch.status === 'completed' && 'Concluído'}
-                      {batch.status === 'processing' && 'Processando'}
-                      {batch.status === 'error' && 'Com Erro'}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+          <h3 className="text-lg font-bold text-slate-800 mb-4">Lotes Recentes</h3>
+          <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+            {lotesRecentes.length === 0 ? (
+              <p className="text-sm text-slate-500 text-center mt-10">Nenhum lote processado ainda.</p>
+            ) : (
+              lotesRecentes.map(lote => (
+                <div key={lote.id} className="p-4 border border-slate-100 bg-slate-50 rounded-xl">
+                  <p className="font-semibold text-slate-800 text-sm truncate">{lote.nome_lote}</p>
+                  <div className="flex justify-between items-center mt-2">
+                    <span className="text-xs font-medium px-2 py-1 rounded bg-white border border-slate-200 text-slate-600">
+                      {lote.status}
                     </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    <span className="text-xs text-slate-400">
+                      {new Date(lote.data_criacao).toLocaleDateString('pt-PT')}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
-}
+};
+
+export { DashboardView };

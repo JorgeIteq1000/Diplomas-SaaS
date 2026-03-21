@@ -1,158 +1,270 @@
-import React, { useState } from 'react';
-import { 
-  BrainCircuit, 
-  CheckCircle2, 
-  XCircle, 
-  AlertTriangle,
-  FileText,
-  User,
-  CreditCard,
-  Calendar,
-  ChevronRight,
-  ChevronLeft
-} from 'lucide-react';
-import { cn } from '../lib/utils';
+import React, { useState, useEffect } from 'react';
+import { AlertTriangle, CheckCircle, XCircle, FileText, ChevronRight, Loader2, Save } from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
 
-export function AuditDeskView() {
+interface AlunoErro {
+  id: string;
+  nome_planilha: string;
+  cpf: string;
+  curso_alvo: string;
+  motivo_reprovacao: string;
+  status: string;
+  documento_erro_url?: string; // <-- ADICIONAR ESTA LINHA
+}
+
+const AuditDeskView: React.FC = () => {
+  const [alunosComErro, setAlunosComErro] = useState<AlunoErro[]>([]);
+  const [alunoSelecionado, setAlunoSelecionado] = useState<AlunoErro | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [salvando, setSalvando] = useState(false);
+
+  // Campos do formulário para correção manual
   const [formData, setFormData] = useState({
-    name: 'RICARDO OLIVEIRA SANTOS',
-    cpf: '123.456.789-00',
-    rg: 'MG-12.345.678',
-    birthDate: '15/05/1998',
-    graduationDate: '20/12/2023'
+    nome: '',
+    rg: '',
+    dataNascimento: '',
+    dataColacao: ''
   });
 
+  const fetchErros = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('alunos_dossie')
+        .select('*')
+        .in('status', ['REPROVADO_IA', 'REPROVADO_ROTA'])
+        .order('nome_planilha', { ascending: true });
+
+      if (error) throw error;
+      setAlunosComErro(data as AlunoErro[]);
+      
+      // Se tiver alunos com erro e nenhum selecionado, seleciona o primeiro
+      if (data && data.length > 0 && !alunoSelecionado) {
+        selecionarAluno(data[0] as AlunoErro);
+      } else if (data && data.length === 0) {
+        setAlunoSelecionado(null);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar auditoria:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchErros();
+  }, []);
+
+  const selecionarAluno = (aluno: AlunoErro) => {
+    setAlunoSelecionado(aluno);
+    // Pré-preenche o formulário com o nome original da planilha para facilitar
+    setFormData({
+      nome: aluno.nome_planilha,
+      rg: '',
+      dataNascimento: '',
+      dataColacao: ''
+    });
+  };
+
+  const handleForcarAprovacao = async () => {
+    if (!alunoSelecionado) return;
+    
+    try {
+      setSalvando(true);
+      
+      const { error } = await supabase
+        .from('alunos_dossie')
+        .update({ 
+          status: 'AGUARDANDO_ROBO',
+          motivo_reprovacao: 'Corrigido manualmente pelo Auditor. Aguardando reprocessamento.',
+          // --- NOVIDADE: ENVIANDO OS DADOS DIGITADOS PARA O BANCO ---
+          correcoes_manuais: {
+            nome: formData.nome,
+            rg: formData.rg,
+            dataNascimento: formData.dataNascimento,
+            dataColacao: formData.dataColacao
+          }
+        })
+        .eq('id', alunoSelecionado.id);
+
+      if (error) throw error;
+
+      alert('Aluno corrigido e devolvido para a fila do robô com sucesso!');
+      setAlunoSelecionado(null);
+      fetchErros(); // Recarrega a lista
+      
+    } catch (error: any) {
+      alert(`Erro ao forçar aprovação: ${error.message}`);
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[80vh]">
+        <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
+      </div>
+    );
+  }
+
   return (
-    <div className="h-[calc(100vh-120px)] flex flex-col animate-in fade-in duration-500">
-      <header className="mb-6 flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Mesa de Auditoria</h1>
-          <p className="text-slate-500">Resolva pendências de leitura que a IA sinalizou.</p>
+    <div className="flex h-[calc(100vh-4rem)] overflow-hidden bg-slate-50">
+      
+      {/* MENU LATERAL ESQUERDO: LISTA DE ALUNOS COM ERRO */}
+      <div className="w-1/3 bg-white border-r border-slate-200 flex flex-col">
+        <div className="p-6 border-b border-slate-200 bg-white">
+          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+            <AlertTriangle className="w-6 h-6 text-amber-500" />
+            Mesa de Auditoria
+          </h2>
+          <p className="text-sm text-slate-500 mt-1">
+            {alunosComErro.length} {alunosComErro.length === 1 ? 'documento precisa' : 'documentos precisam'} de revisão
+          </p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <span className="font-bold text-slate-900">12</span> de 45 pendências
-          </div>
-          <div className="flex gap-2">
-            <button className="p-2 border border-slate-200 rounded-lg hover:bg-slate-50"><ChevronLeft className="w-5 h-5" /></button>
-            <button className="p-2 border border-slate-200 rounded-lg hover:bg-slate-50"><ChevronRight className="w-5 h-5" /></button>
-          </div>
-        </div>
-      </header>
 
-      <div className="flex-1 flex gap-6 overflow-hidden">
-        {/* Left: Document Viewer */}
-        <div className="flex-1 bg-slate-100 rounded-2xl border border-slate-200 relative overflow-hidden flex items-center justify-center group">
-          <div className="absolute inset-0 bg-[url('https://picsum.photos/seed/doc/800/1200')] bg-cover bg-center opacity-40 blur-sm" />
-          <div className="relative z-10 bg-white p-8 shadow-2xl rounded-lg border border-slate-200 max-w-md w-full">
-            <div className="flex items-center justify-between mb-8 border-b pb-4">
-              <FileText className="w-8 h-8 text-blue-600" />
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Documento de Identidade</span>
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {alunosComErro.length === 0 ? (
+            <div className="text-center py-10">
+              <CheckCircle className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
+              <h3 className="text-slate-700 font-medium">Tudo Limpo!</h3>
+              <p className="text-slate-500 text-sm">Nenhum erro encontrado pela IA.</p>
             </div>
-            <div className="space-y-6">
-              <div className="h-4 w-3/4 bg-slate-100 rounded animate-pulse" />
-              <div className="h-4 w-1/2 bg-slate-100 rounded animate-pulse" />
-              <div className="h-32 w-full bg-slate-50 rounded-lg border border-dashed border-slate-200 flex items-center justify-center">
-                <span className="text-slate-300 text-sm italic">Área de Assinatura</span>
+          ) : (
+            alunosComErro.map((aluno) => (
+              <div 
+                key={aluno.id}
+                onClick={() => selecionarAluno(aluno)}
+                className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                  alunoSelecionado?.id === aluno.id 
+                  ? 'border-blue-500 bg-blue-50 shadow-sm' 
+                  : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <h4 className="font-semibold text-slate-800 line-clamp-1">{aluno.nome_planilha}</h4>
+                  <ChevronRight className={`w-5 h-5 ${alunoSelecionado?.id === aluno.id ? 'text-blue-500' : 'text-slate-400'}`} />
+                </div>
+                <p className="text-xs font-mono text-slate-500 mb-2">CPF: {aluno.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")}</p>
+                <div className="inline-flex items-center px-2 py-1 rounded bg-red-100 text-red-700 text-xs font-medium line-clamp-1">
+                  <XCircle className="w-3 h-3 mr-1" />
+                  {aluno.status === 'REPROVADO_ROTA' ? 'Erro de Matriz/Curso' : 'Reprovado pela IA'}
+                </div>
               </div>
-              <div className="h-4 w-2/3 bg-slate-100 rounded animate-pulse" />
-            </div>
-          </div>
-          <div className="absolute top-4 right-4 bg-red-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">
-            Divergência Detectada
-          </div>
+            ))
+          )}
         </div>
+      </div>
 
-        {/* Right: Review Panel */}
-        <div className="w-[450px] flex flex-col gap-4 overflow-y-auto pr-2">
-          {/* AI Reasoning */}
-          <div className="bg-blue-50 border border-blue-100 p-5 rounded-xl space-y-3">
-            <div className="flex items-center gap-2 text-blue-700 font-bold">
-              <BrainCircuit className="w-5 h-5" />
-              Raciocínio da IA
+      {/* ÁREA PRINCIPAL DIREITA: DIVISÃO DE TELA (PDF + FORMULÁRIO) */}
+      {alunoSelecionado ? (
+        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+          
+          <div className="flex-1 p-4 bg-slate-200 flex items-center justify-center relative">
+              {alunoSelecionado.documento_erro_url ? (
+                <iframe 
+                  src={`${alunoSelecionado.documento_erro_url}#toolbar=0`} 
+                  className="w-full h-full rounded-xl shadow-inner border border-slate-300 bg-white"
+                  title="Documento Reprovado"
+                />
+              ) : (
+                <div className="bg-white p-8 rounded-2xl border-2 border-dashed border-slate-300 text-center max-w-sm">
+                  <FileText className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                  <h4 className="text-slate-700 font-medium mb-2">Sem Documento</h4>
+                  <p className="text-slate-500 text-sm">
+                    O PDF original não foi encontrado ou não subiu para a nuvem.
+                  </p>
+                </div>
+              )}
             </div>
-            <p className="text-sm text-blue-800 leading-relaxed">
-              "O documento apresenta uma mancha de desgaste na região do nome. A confiança na leitura do sobrenome <strong>'SANTOS'</strong> é de apenas 62%. Recomendo validação humana para evitar erro no registro do MEC."
-            </p>
-          </div>
 
-          {/* Correction Form */}
-          <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-sm space-y-6">
-            <h3 className="font-bold text-slate-900 flex items-center gap-2">
-              <User className="w-4 h-4 text-slate-400" />
-              Dados do Aluno
-            </h3>
-            
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500 uppercase">Nome Completo</label>
+          {/* LADO DIREITO DA ÁREA DIREITA: PAINEL DE CORREÇÃO */}
+          <div className="w-full lg:w-1/2 bg-white overflow-y-auto p-6 lg:p-10">
+            <h2 className="text-2xl font-bold text-slate-800 mb-6">Parecer da Auditoria</h2>
+
+            {/* CARD DE ERRO DA IA */}
+            <div className="bg-red-50 border border-red-200 rounded-xl p-5 mb-8 shadow-sm">
+              <h3 className="text-red-800 font-semibold mb-2 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5" />
+                Motivo da Reprovação
+              </h3>
+              <p className="text-red-700 text-sm leading-relaxed">
+                {alunoSelecionado.motivo_reprovacao || 'A IA não conseguiu validar a documentação.'}
+              </p>
+            </div>
+
+            {/* FORMULÁRIO DE CORREÇÃO MANUAL */}
+            <div className="space-y-5">
+              <h3 className="text-lg font-semibold text-slate-800 border-b pb-2">Correção Manual</h3>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Nome Completo Correto</label>
                 <input 
                   type="text" 
-                  value={formData.name}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+                  value={formData.nome}
+                  onChange={(e) => setFormData({...formData, nome: e.target.value})}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                  placeholder="Nome do Aluno"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500 uppercase">CPF</label>
-                  <div className="relative">
-                    <input 
-                      type="text" 
-                      value={formData.cpf}
-                      className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-medium"
-                    />
-                    <CreditCard className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-                  </div>
+              <div className="grid grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Data de Nascimento</label>
+                  <input 
+                    type="text" 
+                    value={formData.dataNascimento}
+                    onChange={(e) => setFormData({...formData, dataNascimento: e.target.value})}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    placeholder="DD/MM/AAAA"
+                  />
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500 uppercase">RG</label>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Número do RG</label>
                   <input 
                     type="text" 
                     value={formData.rg}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+                    onChange={(e) => setFormData({...formData, rg: e.target.value})}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    placeholder="Ex: 12.345.678-9"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Data de Nasc.</label>
-                  <div className="relative">
-                    <input 
-                      type="text" 
-                      value={formData.birthDate}
-                      className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-medium"
-                    />
-                    <Calendar className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Colação de Grau</label>
-                  <input 
-                    type="text" 
-                    value={formData.graduationDate}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-medium"
-                  />
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Data de Colação de Grau (Anterior)</label>
+                <input 
+                  type="text" 
+                  value={formData.dataColacao}
+                  onChange={(e) => setFormData({...formData, dataColacao: e.target.value})}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  placeholder="DD/MM/AAAA"
+                />
               </div>
+
+              <div className="pt-6 border-t border-slate-100 flex gap-4">
+                <button 
+                  onClick={handleForcarAprovacao}
+                  disabled={salvando}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-3 px-4 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-70"
+                >
+                  {salvando ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                  Forçar Aprovação & Reprocessar
+                </button>
+              </div>
+
             </div>
           </div>
-
-          {/* Actions */}
-          <div className="grid grid-cols-2 gap-4 mt-auto pt-4">
-            <button className="flex items-center justify-center gap-2 bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100">
-              <CheckCircle2 className="w-5 h-5" />
-              Forçar Aprovação
-            </button>
-            <button className="flex items-center justify-center gap-2 bg-red-50 text-red-600 border border-red-100 py-3 rounded-xl font-bold hover:bg-red-100 transition-all">
-              <XCircle className="w-5 h-5" />
-              Reprovar
-            </button>
-          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex-1 flex flex-col items-center justify-center bg-slate-50 text-slate-400">
+          <FileText className="w-20 h-20 mb-4 opacity-50" />
+          <p className="text-lg font-medium">Selecione um aluno na lista para auditar.</p>
+        </div>
+      )}
+
     </div>
   );
-}
+};
+
+export { AuditDeskView };

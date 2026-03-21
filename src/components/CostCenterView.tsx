@@ -1,134 +1,97 @@
-import React, { useState } from 'react';
-import { 
-  DollarSign, 
-  TrendingDown, 
-  Zap, 
-  Cpu, 
-  Database, 
-  Calculator,
-  ArrowRight
-} from 'lucide-react';
-import { cn } from '../lib/utils';
+import React, { useState, useEffect } from 'react';
+import { DollarSign, TrendingDown, Clock, Zap, Loader2 } from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
 
-const apiConsumption = [
-  { name: 'Google Vision (OCR)', usage: '12.450 reqs', cost: 'R$ 622,50', icon: Cpu },
-  { name: 'Tokens Gemini (IA)', usage: '4.2M tokens', cost: 'R$ 1.120,00', icon: Zap },
-  { name: 'Taxa Solis (MEC)', usage: '4.280 registros', cost: 'R$ 8.560,00', icon: Database },
-];
+const CostCenterView: React.FC = () => {
+  const [dados, setDados] = useState({ processados: 0, emitidos: 0 });
+  const [loading, setLoading] = useState(true);
 
-export function CostCenterView() {
-  const [simAlunos, setSimAlunos] = useState(1000);
+  // Custos Estimados (Podes ajustar estes valores)
+  const CUSTO_HUMANO_POR_DIPLOMA = 25.00; // R$ 25 gastos num colaborador manual
+  const CUSTO_API_POR_DIPLOMA = 1.20; // R$ 1.20 gasto em Gemini + Vision
+  const HORAS_HUMANAS_POR_DIPLOMA = 0.5; // 30 minutos por diploma
 
-  const estimatedCost = simAlunos * 2.45;
+  useEffect(() => {
+    const buscarDados = async () => {
+      try {
+        setLoading(true);
+        const { data } = await supabase.from('alunos_dossie').select('status');
+        if (data) {
+          const emitidos = data.filter(a => a.status === 'EMITIDO_SOLIS').length;
+          setDados({ processados: data.length, emitidos });
+        }
+      } catch (error) {
+        console.error('Erro nos custos:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    buscarDados();
+  }, []);
+
+  const custoTotalIA = dados.processados * CUSTO_API_POR_DIPLOMA;
+  const custoEquivalenteHumano = dados.processados * CUSTO_HUMANO_POR_DIPLOMA;
+  const economiaGerada = custoEquivalenteHumano - custoTotalIA;
+  const horasPoupadas = Math.round(dados.emitidos * HORAS_HUMANAS_POR_DIPLOMA);
+
+  if (loading) return <div className="flex h-full items-center justify-center"><Loader2 className="w-10 h-10 animate-spin text-blue-600" /></div>;
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <header>
-        <h1 className="text-2xl font-bold text-slate-900">Centro de Custos</h1>
-        <p className="text-slate-500">Acompanhe o ROI e a previsibilidade financeira da operação.</p>
-      </header>
+    <div className="p-8 max-w-7xl mx-auto space-y-8">
+      <div>
+        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Centro de Custos e ROI</h1>
+        <p className="text-slate-500 mt-1">Calculadora de retorno sobre o investimento e consumo de API.</p>
+      </div>
 
-      {/* Financial Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="bg-blue-50 p-2 rounded-lg text-blue-600">
-              <DollarSign className="w-6 h-6" />
-            </div>
-            <span className="text-sm font-medium text-slate-500">Custo Total (Mês)</span>
+        <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-6 rounded-2xl text-white shadow-lg">
+          <div className="flex justify-between items-start mb-4">
+            <h3 className="font-medium text-emerald-100">Economia Gerada</h3>
+            <div className="p-2 bg-white/20 rounded-lg"><TrendingDown className="w-5 h-5" /></div>
           </div>
-          <p className="text-3xl font-bold text-slate-900">R$ 10.302,50</p>
-          <p className="text-xs text-slate-400 mt-2">Ref. Março 2024</p>
+          <h2 className="text-4xl font-bold mb-1">R$ {economiaGerada.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h2>
+          <p className="text-emerald-100 text-sm">Comparado ao processo manual</p>
         </div>
 
-        <div className="bg-emerald-50 p-6 rounded-xl border border-emerald-100 shadow-sm">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="bg-emerald-100 p-2 rounded-lg text-emerald-600">
-              <TrendingDown className="w-6 h-6" />
-            </div>
-            <span className="text-sm font-medium text-emerald-700">Economia Gerada</span>
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex justify-between items-start mb-4">
+            <h3 className="font-medium text-slate-500">Horas Poupadas da Equipa</h3>
+            <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Clock className="w-5 h-5" /></div>
           </div>
-          <p className="text-3xl font-bold text-emerald-900">R$ 45.200,00</p>
-          <p className="text-xs text-emerald-600 mt-2">vs. Processo Manual Humano</p>
+          <h2 className="text-4xl font-bold text-slate-800 mb-1">{horasPoupadas}h</h2>
+          <p className="text-slate-500 text-sm">Que podem ser realocadas noutras tarefas</p>
         </div>
 
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="bg-slate-50 p-2 rounded-lg text-slate-600">
-              <Calculator className="w-6 h-6" />
-            </div>
-            <span className="text-sm font-medium text-slate-500">Custo Médio / Diploma</span>
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex justify-between items-start mb-4">
+            <h3 className="font-medium text-slate-500">Custo Total em Nuvem (IA)</h3>
+            <div className="p-2 bg-purple-50 text-purple-600 rounded-lg"><Zap className="w-5 h-5" /></div>
           </div>
-          <p className="text-3xl font-bold text-slate-900">R$ 2,41</p>
-          <p className="text-xs text-slate-400 mt-2">Eficiência Operacional: 94%</p>
+          <h2 className="text-4xl font-bold text-slate-800 mb-1">R$ {custoTotalIA.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h2>
+          <p className="text-slate-500 text-sm">Google Cloud Vision + Gemini API</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* API Consumption */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-          <h3 className="text-lg font-bold text-slate-900 mb-6">Consumo de APIs</h3>
-          <div className="space-y-4">
-            {apiConsumption.map((api) => (
-              <div key={api.name} className="flex items-center justify-between p-4 rounded-lg bg-slate-50 border border-slate-100">
-                <div className="flex items-center gap-4">
-                  <div className="bg-white p-2 rounded-md shadow-sm">
-                    <api.icon className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-slate-900">{api.name}</p>
-                    <p className="text-xs text-slate-500">{api.usage}</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-bold text-slate-900">{api.cost}</p>
-                </div>
-              </div>
-            ))}
+      <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
+        <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
+          <DollarSign className="w-5 h-5 text-emerald-500" />
+          Simulador de Processamento Futuro
+        </h3>
+        <div className="flex flex-col sm:flex-row gap-4 items-center bg-slate-50 p-6 rounded-xl border border-slate-100">
+          <div className="flex-1 w-full">
+            <label className="block text-sm font-medium text-slate-700 mb-2">Quantos diplomas prevês emitir no próximo mês?</label>
+            <input type="number" defaultValue="1000" className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
           </div>
-        </div>
-
-        {/* Simulator */}
-        <div className="bg-slate-900 text-white p-8 rounded-2xl shadow-xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-4 opacity-10">
-            <Calculator className="w-32 h-32" />
-          </div>
-          <div className="relative z-10">
-            <h3 className="text-xl font-bold mb-2">Simulador de Previsibilidade</h3>
-            <p className="text-slate-400 text-sm mb-8">Planeje seu próximo semestre com base no volume de alunos.</p>
-            
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Volume de Alunos Previsto</label>
-                <input 
-                  type="range" 
-                  min="100" 
-                  max="10000" 
-                  step="100"
-                  value={simAlunos}
-                  onChange={(e) => setSimAlunos(parseInt(e.target.value))}
-                  className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                />
-                <div className="flex justify-between text-sm font-mono">
-                  <span>100</span>
-                  <span className="text-blue-400 font-bold">{simAlunos} Alunos</span>
-                  <span>10.000</span>
-                </div>
-              </div>
-
-              <div className="pt-6 border-t border-slate-800 flex items-end justify-between">
-                <div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Custo Estimado</p>
-                  <p className="text-4xl font-bold text-white">R$ {estimatedCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                </div>
-                <button className="bg-blue-600 text-white p-3 rounded-full hover:bg-blue-500 transition-colors">
-                  <ArrowRight className="w-6 h-6" />
-                </button>
-              </div>
-            </div>
+          <div className="hidden sm:block text-slate-300 font-light text-4xl">=</div>
+          <div className="flex-1 w-full bg-blue-50 p-4 rounded-lg border border-blue-100 text-center">
+            <p className="text-sm font-medium text-blue-600 mb-1">Custo Estimado (IA)</p>
+            <p className="text-2xl font-bold text-blue-800">R$ 1.200,00</p>
           </div>
         </div>
       </div>
+
     </div>
   );
-}
+};
+
+export { CostCenterView };

@@ -1,65 +1,64 @@
 import React from 'react';
-import { 
-  LayoutDashboard, 
-  Layers, 
-  FileCheck, 
-  History, 
-  BarChart3, 
-  Settings, 
-  LogOut,
-  ShieldCheck
-} from 'lucide-react';
-import { cn } from '../lib/utils';
-import { View } from '../types';
+import { LayoutDashboard, Layers, ShieldAlert, History, CircleDollarSign, Settings, LogOut, GraduationCap } from 'lucide-react';
 
 interface SidebarProps {
-  currentView: View;
-  onViewChange: (view: View) => void;
+  activeTab: string;
+  onTabChange: (tab: string) => void;
+  onLogout: () => void;
 }
 
-const menuItems = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'batches', label: 'Gestão de Lotes', icon: Layers },
-  { id: 'audit', label: 'Mesa de Auditoria', icon: FileCheck },
-  { id: 'history', label: 'Histórico & Compliance', icon: History },
-  { id: 'costs', label: 'Centro de Custos', icon: BarChart3 },
-  { id: 'settings', label: 'Configurações', icon: Settings },
-] as const;
+const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onLogout }) => {
+  const menuItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
+    { id: 'batches', label: 'Gestão de Lotes', icon: <Layers className="w-5 h-5" /> },
+    { id: 'audit', label: 'Mesa de Auditoria', icon: <ShieldAlert className="w-5 h-5" /> },
+    { id: 'history', label: 'Histórico (MEC)', icon: <History className="w-5 h-5" /> },
+    { id: 'costs', label: 'Centro de Custos', icon: <CircleDollarSign className="w-5 h-5" /> },
+    { id: 'settings', label: 'Configurações', icon: <Settings className="w-5 h-5" /> },
+  ];
 
-export function Sidebar({ currentView, onViewChange }: SidebarProps) {
   return (
-    <aside className="w-64 bg-slate-950 text-slate-300 flex flex-col h-screen border-r border-slate-800">
-      <div className="p-6 flex items-center gap-3">
-        <div className="bg-blue-600 p-2 rounded-lg">
-          <ShieldCheck className="text-white w-6 h-6" />
+    <div className="w-64 bg-slate-900 text-slate-300 flex flex-col h-full border-r border-slate-800 shadow-xl z-10">
+      
+      {/* LOGO E NOME DO PRODUTO */}
+      <div className="p-6 flex items-center gap-3 text-white border-b border-slate-800">
+        <div className="p-2 bg-blue-600 rounded-lg shadow-md">
+          <GraduationCap className="w-6 h-6 text-white" />
         </div>
-        <span className="font-bold text-xl text-white tracking-tight">AutoCert AI</span>
+        <span className="text-xl font-bold tracking-tight">AutoCert AI</span>
       </div>
 
-      <nav className="flex-1 px-4 py-4 space-y-1">
+      {/* ITENS DO MENU */}
+      <div className="flex-1 py-6 flex flex-col gap-2 px-4 overflow-y-auto">
         {menuItems.map((item) => (
           <button
             key={item.id}
-            onClick={() => onViewChange(item.id)}
-            className={cn(
-              "w-full flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 text-sm font-medium",
-              currentView === item.id 
-                ? "bg-blue-600/10 text-blue-400 border border-blue-600/20" 
-                : "hover:bg-slate-900 hover:text-white"
-            )}
+            onClick={() => onTabChange(item.id)}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${
+              activeTab === item.id
+                ? 'bg-blue-600 text-white shadow-md transform scale-[1.02]'
+                : 'hover:bg-slate-800 hover:text-white'
+            }`}
           >
-            <item.icon className={cn("w-5 h-5", currentView === item.id ? "text-blue-400" : "text-slate-400")} />
+            {item.icon}
             {item.label}
           </button>
         ))}
-      </nav>
+      </div>
 
+      {/* BOTÃO DE SAIR (LOGOUT) */}
       <div className="p-4 border-t border-slate-800">
-        <button className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-slate-400 hover:bg-slate-900 hover:text-white transition-colors">
-          <LogOut className="w-5 h-5" />
-          Sair da Conta
+        <button 
+          onClick={onLogout}
+          className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm w-full hover:bg-red-500/10 hover:text-red-400 text-slate-400 group"
+        >
+          <LogOut className="w-5 h-5 group-hover:scale-110 transition-transform" />
+          Sair do Sistema
         </button>
       </div>
-    </aside>
+
+    </div>
   );
-}
+};
+
+export { Sidebar };
