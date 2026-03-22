@@ -9,7 +9,8 @@ interface AlunoErro {
   curso_alvo: string;
   motivo_reprovacao: string;
   status: string;
-  documento_erro_url?: string; // <-- ADICIONAR ESTA LINHA
+  documento_erro_url?: string;
+  dados_extraidos?: any; // <-- ADICIONADO PARA LER OS STATUS DA IA
 }
 
 const AuditDeskView: React.FC = () => {
@@ -55,6 +56,26 @@ const AuditDeskView: React.FC = () => {
     fetchErros();
   }, []);
 
+  // Log para depurarmos com qualidade o que a IA está devolvendo
+  useEffect(() => {
+    if (alunoSelecionado) {
+      console.log("🔍 Dados de Validação da IA:", alunoSelecionado?.dados_extraidos?.dados_formulario?.validacao_ia);
+    }
+  }, [alunoSelecionado]);
+
+  // Função que decide a cor da caixinha baseado no status da IA
+  const getInputClass = (campo: string) => {
+    const validacao = alunoSelecionado?.dados_extraidos?.dados_formulario?.validacao_ia;
+    
+    // Se não tiver a tag de validação ou se estiver tudo "OK", fundo branco normal
+    if (!validacao || !validacao[campo] || validacao[campo] === 'OK') {
+      return "w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-colors";
+    }
+    
+    // Se a IA gritou erro (DIVERGENTE, ILEGIVEL, AUSENTE...), pinta de vermelhão!
+    return "w-full px-4 py-2 border-2 border-red-500 bg-red-50 text-red-900 rounded-lg focus:ring-2 focus:ring-red-500 outline-none placeholder-red-300 transition-colors";
+  };
+
   const selecionarAluno = (aluno: AlunoErro) => {
     setAlunoSelecionado(aluno);
     // Pré-preenche o formulário com o nome original da planilha para facilitar
@@ -77,7 +98,6 @@ const AuditDeskView: React.FC = () => {
         .update({ 
           status: 'AGUARDANDO_ROBO',
           motivo_reprovacao: 'Corrigido manualmente pelo Auditor. Aguardando reprocessamento.',
-          // --- NOVIDADE: ENVIANDO OS DADOS DIGITADOS PARA O BANCO ---
           correcoes_manuais: {
             nome: formData.nome,
             rg: formData.rg,
@@ -203,9 +223,15 @@ const AuditDeskView: React.FC = () => {
                   type="text" 
                   value={formData.nome}
                   onChange={(e) => setFormData({...formData, nome: e.target.value})}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                  className={getInputClass('nome')}
                   placeholder="Nome do Aluno"
                 />
+                {alunoSelecionado?.dados_extraidos?.dados_formulario?.validacao_ia?.nome && 
+                 alunoSelecionado.dados_extraidos.dados_formulario.validacao_ia.nome !== 'OK' && (
+                  <span className="text-xs text-red-600 font-medium mt-1 block">
+                    ⚠️ Nome {alunoSelecionado.dados_extraidos.dados_formulario.validacao_ia.nome.toLowerCase()}
+                  </span>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-5">
@@ -215,9 +241,15 @@ const AuditDeskView: React.FC = () => {
                     type="text" 
                     value={formData.dataNascimento}
                     onChange={(e) => setFormData({...formData, dataNascimento: e.target.value})}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    className={getInputClass('data_nascimento')}
                     placeholder="DD/MM/AAAA"
                   />
+                  {alunoSelecionado?.dados_extraidos?.dados_formulario?.validacao_ia?.data_nascimento && 
+                   alunoSelecionado.dados_extraidos.dados_formulario.validacao_ia.data_nascimento !== 'OK' && (
+                    <span className="text-xs text-red-600 font-medium mt-1 block">
+                      ⚠️ Data de nascimento {alunoSelecionado.dados_extraidos.dados_formulario.validacao_ia.data_nascimento.toLowerCase()}
+                    </span>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Número do RG</label>
@@ -225,9 +257,15 @@ const AuditDeskView: React.FC = () => {
                     type="text" 
                     value={formData.rg}
                     onChange={(e) => setFormData({...formData, rg: e.target.value})}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    className={getInputClass('rg')}
                     placeholder="Ex: 12.345.678-9"
                   />
+                  {alunoSelecionado?.dados_extraidos?.dados_formulario?.validacao_ia?.rg && 
+                   alunoSelecionado.dados_extraidos.dados_formulario.validacao_ia.rg !== 'OK' && (
+                    <span className="text-xs text-red-600 font-medium mt-1 block">
+                      ⚠️ RG {alunoSelecionado.dados_extraidos.dados_formulario.validacao_ia.rg.toLowerCase()}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -237,9 +275,15 @@ const AuditDeskView: React.FC = () => {
                   type="text" 
                   value={formData.dataColacao}
                   onChange={(e) => setFormData({...formData, dataColacao: e.target.value})}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  className={getInputClass('data_colacao')}
                   placeholder="DD/MM/AAAA"
                 />
+                {alunoSelecionado?.dados_extraidos?.dados_formulario?.validacao_ia?.data_colacao && 
+                 alunoSelecionado.dados_extraidos.dados_formulario.validacao_ia.data_colacao !== 'OK' && (
+                  <span className="text-xs text-red-600 font-medium mt-1 block">
+                    ⚠️ Colação {alunoSelecionado.dados_extraidos.dados_formulario.validacao_ia.data_colacao.toLowerCase()}
+                  </span>
+                )}
               </div>
 
               <div className="pt-6 border-t border-slate-100 flex gap-4">
