@@ -957,8 +957,7 @@ def gerar_diploma_solis(df, payload_hist, pasta_aluno, token_solis, tracker, tpl
     
     da = tpl_dip["dados_academicos"]
     nome_curso = df.get("nome_curso", "")
-    if nome_curso:
-        da["DadosDiplomaDadosCursoNomeCurso"] = nome_curso
+    if nome_curso: da["DadosDiplomaDadosCursoNomeCurso"] = nome_curso
 
     da["DadosDiplomaDiplomadoID"] = df.get("id_diplomado", df.get("id_card", "99999"))
     da["DadosDiplomaDataConclusao"] = fmt_data_iso(df.get("data_conclusao_curso",""))
@@ -971,9 +970,7 @@ def gerar_diploma_solis(df, payload_hist, pasta_aluno, token_solis, tracker, tpl
     curso_upper = nome_curso.upper()
     if "PEDAGOGIA" in curso_upper:
         mensagem_dip = df.get("prefixo_mensagem", "").strip()
-    elif "ARTES VISUAIS" in curso_upper:
-        mensagem_dip = "Curso reconhecido na forma do art. 11, § 1°, do Decreto n° 9.235, de 15 de dezembro de 2017, e do art. 26, § 1°, da Portaria MEC n° 1.095, de 25/10/2018, DOU n° 207, seção 01, pág. 32, de 26/10/2018."
-    elif "GEOGRAFIA" in curso_upper:
+    elif "ARTES VISUAIS" in curso_upper or "GEOGRAFIA" in curso_upper:
         mensagem_dip = "Curso reconhecido na forma do art. 11, § 1°, do Decreto n° 9.235, de 15 de dezembro de 2017, e do art. 26, § 1°, da Portaria MEC n° 1.095, de 25/10/2018, DOU n° 207, seção 01, pág. 32, de 26/10/2018."
     da["DadosDiplomaDadosCursoReconhecimentoInformacoesTramitacaoEMECTipoProcesso"] = mensagem_dip
 
@@ -994,23 +991,14 @@ def gerar_diploma_solis(df, payload_hist, pasta_aluno, token_solis, tracker, tpl
     da["RegistroReqTermoResponsabilidadeCargo"] = "Secretária Geral"
     
     docs_finais = []
-    mapa_docs = {
-        "rg_cpf_path": "DocumentoIdentidadeDoAluno", 
-        "hist_em_path": "ProvaConclusaoEnsinoMedio", 
-        "comp_endereco_path": "Outros", 
-        "hist_grad_anterior_path": "Outros", 
-        "diploma_grad_anterior_path": "Outros"
-    }
-    
+    mapa_docs = {"rg_cpf_path": "DocumentoIdentidadeDoAluno", "hist_em_path": "ProvaConclusaoEnsinoMedio", "comp_endereco_path": "Outros", "hist_grad_anterior_path": "Outros", "diploma_grad_anterior_path": "Outros"}
     for k, t in mapa_docs.items():
         if df.get(k) and os.path.exists(df[k]):
-            with open(df[k], "rb") as f: 
-                docs_finais.append({"RegistroReqDocumentacaoComprobatoriaDocumentoTipo": t, "RegistroReqDocumentacaoComprobatoriaDocumentoDocumento": base64.b64encode(f.read()).decode('utf-8'), "RegistroReqDocumentacaoComprobatoriaDocumentoObservacoes": f"Documento {t}."})
+            with open(df[k], "rb") as f: docs_finais.append({"RegistroReqDocumentacaoComprobatoriaDocumentoTipo": t, "RegistroReqDocumentacaoComprobatoriaDocumentoDocumento": base64.b64encode(f.read()).decode('utf-8'), "RegistroReqDocumentacaoComprobatoriaDocumentoObservacoes": f"Documento {t}."})
     
     if df.get("certidao_path") and os.path.exists(df["certidao_path"]):
         t_cert = "CertidaoCasamento" if df.get("tipo_certidao") == "CASAMENTO" else "CertidaoNascimento"
-        with open(df["certidao_path"], "rb") as f:
-            docs_finais.append({"RegistroReqDocumentacaoComprobatoriaDocumentoTipo": t_cert, "RegistroReqDocumentacaoComprobatoriaDocumentoDocumento": base64.b64encode(f.read()).decode('utf-8'), "RegistroReqDocumentacaoComprobatoriaDocumentoObservacoes": f"Documento {t_cert}."})
+        with open(df["certidao_path"], "rb") as f: docs_finais.append({"RegistroReqDocumentacaoComprobatoriaDocumentoTipo": t_cert, "RegistroReqDocumentacaoComprobatoriaDocumentoDocumento": base64.b64encode(f.read()).decode('utf-8'), "RegistroReqDocumentacaoComprobatoriaDocumentoObservacoes": f"Documento {t_cert}."})
 
     for arq in ["oficio", "certificado"]:
         c = os.path.join(pasta_aluno, "Arquivos_PDF", f"{arq}_{nome_fmt}.pdf")
@@ -1021,21 +1009,15 @@ def gerar_diploma_solis(df, payload_hist, pasta_aluno, token_solis, tracker, tpl
     da["DadosDiplomaAssinantes"] = []
     da["DadosRegistroAssinantes"] = []
 
-    nome_arquivo_json_req = f"payload_diploma_REQUEST_{nome_fmt}.json"
-    with open(os.path.join(p_dip, nome_arquivo_json_req), "w", encoding="utf-8") as f:
-        json.dump(tpl_dip, f, indent=4, ensure_ascii=False)
-
     logger.info(f"{tracker} Emitindo Diploma na Solis versão 1.05...")
     res_d = requests.post(f"{SOLIS_API_BASE_URL}/diploma-digital/gerar", headers=h_solis, json=tpl_dip, timeout=180).json()
         
     d_dip = res_d.get("data", {})
     if d_dip.get("situacao_diploma") != "EM CONFORMIDADE": 
-        logger.error(f"{tracker} Erro Diploma: {json.dumps(res_d, ensure_ascii=False)}")
         raise RuntimeError(f"Erro Diploma: {res_d.get('mensagens', d_dip.get('erros', res_d))}")
         
     x_path = os.path.join(p_dip, f"Diploma_{nome_fmt}.xml")
     with open(x_path, "w", encoding="utf-8") as f: f.write(d_dip.get("documentacao",""))
-    
     dest_dip = os.path.join(DIRETORIO_LOTE, f"Diploma_{nome_fmt}.xml")
     shutil.copy(x_path, dest_dip)
     
@@ -1044,6 +1026,7 @@ def gerar_diploma_solis(df, payload_hist, pasta_aluno, token_solis, tracker, tpl
         with open(p_path, "wb") as f: f.write(base64.b64decode(d_dip["rvdd"]))
 
     logger.info(f"{tracker} ✅ DIPLOMA CONCLUÍDO COM SUCESSO (Cópia salva no Lote)!")
+    return x_path, p_path
 
 # ==========================================
 # ENVIO EM LOTE PARA A SOLIS
@@ -1095,139 +1078,96 @@ def processar_aluno(aluno_db, t_esp, t_solis, mods_w, chaves_pdf, listas_hosting
     nome_bruto = str(aluno_db.get('nome_planilha', '')).strip()
     cpf = str(aluno_db.get('cpf', '')).strip()
     curso_alvo = str(aluno_db.get('curso_alvo', '')).strip()
-    
     tracker = f"[{cpf}]"
     nome_fmt = nome_bruto.replace(" ", "_")
-    
     if not nome_bruto or not cpf: return
     pasta = os.path.join(DIRETORIO_BASE_SERVIDOR, f"{nome_bruto} - {cpf}".replace("/", "-"))
     
-    # Atualiza o status no Supabase para mostrar que começou
     supabase.table('alunos_dossie').update({'status': 'EM_ANALISE_IA'}).eq('id', aluno_id).execute()
-
     os.makedirs(pasta, exist_ok=True)
     sessao = requests.Session()
     
     try:
         logger.info(f"{tracker} Iniciando aluno pelo Supabase: {nome_bruto} | Curso: {curso_alvo}")
-        if curso_alvo.upper() == "SEGUNDA GRADUAÇÃO":
-            curso_alvo_limpo = "Pedagogia"
-        else:
-            curso_alvo_limpo = re.sub(r'(?i)^(2[ªaao°]?\s*)?licenciatura\s+(em\s+)?', '', curso_alvo).strip().title()
+        curso_alvo_limpo = "Pedagogia" if curso_alvo.upper() == "SEGUNDA GRADUAÇÃO" else re.sub(r'(?i)^(2[ªaao°]?\s*)?licenciatura\s+(em\s+)?', '', curso_alvo).strip().title()
         
         boletim = extrair_boletim_esp(cpf, curso_alvo, t_esp, sessao, tracker)
         if not boletim: raise ValueError("Boletim não encontrado na ESP.")
         baixar_docs_esp(cpf, t_esp, sessao, pasta, tracker)
 
-        # === APLICANDO A COMPRESSÃO NOS ARQUIVOS BAIXADOS ===
         for doc_name in ["RG.pdf", "CN.pdf", "CC.pdf", "HE.pdf", "DIPLOMA.pdf", "HEEM.pdf", "CE.pdf"]:
-            caminho_doc = os.path.join(pasta, doc_name)
-            if os.path.exists(caminho_doc):
-                comprimir_pdf_via_api(caminho_doc, logger, tracker)
+            comprimir_pdf_via_api(os.path.join(pasta, doc_name), logger, tracker)
         
-        # 1. Extração pela IA
         dossie = extrair_ia_pessoais_e_academicos(pasta, tracker, curso_alvo_limpo, cpf, nome_bruto, aluno_db)
-        with open(os.path.join(pasta, "dossie_ia.json"), "w", encoding="utf-8") as f: json.dump(dossie, f, indent=4, ensure_ascii=False)
-        
-
-        # 2. Roteamento Dinâmico de Templates
         df = dossie["dados_formulario"]
-        hist_escolhido, turma_escolhida, erro_rota = definir_roteamento(
-            curso_alvo=curso_alvo, 
-            curso_anterior=df.get("curso_anterior", ""), 
-            grau_anterior=df.get("grau_anterior", ""), 
-            lista_historicos=listas_hostinger["historicos"], 
-            lista_turmas=listas_hostinger["turmas"],
-            tracker=tracker
-        )
+        hist_escolhido, turma_escolhida, erro_rota = definir_roteamento(curso_alvo, df.get("curso_anterior", ""), df.get("grau_anterior", ""), listas_hostinger["historicos"], listas_hostinger["turmas"], tracker)
         
-        if erro_rota:
-            raise DocumentacaoInvalidaError(erro_rota)
+        if erro_rota: raise DocumentacaoInvalidaError(erro_rota)
 
-        # 3. Baixar Templates Específicos do Aluno na Hostinger
-        logger.info(f"{tracker} 📥 Baixando matrizes da Hostinger: {hist_escolhido} | {turma_escolhida}")
         res_hist = requests.get(API_TEMPLATES_URL, params={"action": "get_content", "institution": "ESP", "template": hist_escolhido}).json()
         res_turma = requests.get(API_TURMAS_URL, params={"action": "get_content", "institution": "ESP", "turma_file": turma_escolhida}).json()
         
-        # 4. Geração dos Documentos e Payloads
         payload_hist = fase_4_documentos_e_payload(dossie, boletim, pasta, mods_w, res_hist, chaves_pdf, tracker, res_turma)
+        
         hx_path, hp_path = gerar_historico_solis(payload_hist, pasta, t_solis, nome_fmt, tracker)
-        
-        # 5. Diploma
         tpl_dip_base = requests.get(API_TEMPLATES_URL, params={"action": "get_content", "institution": "ESP", "template": "diploma-template.json"}).json()
-        gerar_diploma_solis(dossie["dados_formulario"], payload_hist, pasta, t_solis, tracker, tpl_dip_base)
+        dx_path, dp_path = gerar_diploma_solis(dossie["dados_formulario"], payload_hist, pasta, t_solis, tracker, tpl_dip_base)
         
-        # 🎉 SUCESSO TOTAL: Atualiza a base de dados
-        supabase.table('alunos_dossie').update({
-            'status': 'EMITIDO_SOLIS',
-            'dados_extraidos': dossie
-        }).eq('id', aluno_id).execute()
+        # --- UPLOAD PARA A GAVETA 'documentos_finais' ---
+        url_historico = None
+        url_xml = None
+        try:
+            if hp_path and os.path.exists(hp_path):
+                nome_storage_hist = f"{aluno_id}_historico.pdf"
+                with open(hp_path, "rb") as f:
+                    supabase.storage.from_("documentos_finais").upload(nome_storage_hist, f, file_options={"upsert": "true", "content-type": "application/pdf"})
+                url_historico = supabase.storage.from_("documentos_finais").get_public_url(nome_storage_hist)
+            
+            if dx_path and os.path.exists(dx_path):
+                nome_storage_xml = f"{aluno_id}_diploma.xml"
+                with open(dx_path, "rb") as f:
+                    supabase.storage.from_("documentos_finais").upload(nome_storage_xml, f, file_options={"upsert": "true", "content-type": "application/xml"})
+                url_xml = supabase.storage.from_("documentos_finais").get_public_url(nome_storage_xml)
+        except Exception as e_up:
+            logger.error(f"{tracker} Erro ao subir para Storage: {e_up}")
+            
+        dossie["urls_finais"] = {"historico_pdf": url_historico, "diploma_xml": url_xml}
+
+        # 🎉 SUCESSO TOTAL
+        supabase.table('alunos_dossie').update({'status': 'EMITIDO_SOLIS', 'dados_extraidos': dossie}).eq('id', aluno_id).execute()
         
     except DocumentacaoInvalidaError as de:
         logger.error(f"{tracker} ❌ DOCUMENTAÇÃO REPROVADA / ERRO DE ROTA: {de}")
-        
-        # --- UPLOAD DO DOSSIÊ COMPLETO PARA A MESA DE AUDITORIA ---
         url_publica = None
         try:
             nome_arquivo_mesclado = "DOSSIE_AUDITORIA.pdf"
             caminho_mesclado = os.path.join(pasta, nome_arquivo_mesclado)
-            
-            # Cria um PDF vazio em branco
             doc_mesclado = fitz.open()
-            
-            # Lista de documentos base que queremos juntar para o auditor ver
-            docs_para_juntar = ["RG.pdf", "CPF.pdf", "CN.pdf", "CC.pdf", "HE.pdf", "DIPLOMA.pdf"]
-            
             tem_documento = False
-            for doc_nome in docs_para_juntar:
-                caminho_doc = os.path.join(pasta, doc_nome)
-                if os.path.exists(caminho_doc):
+            for doc_nome in ["RG.pdf", "CPF.pdf", "CN.pdf", "CC.pdf", "HE.pdf", "DIPLOMA.pdf"]:
+                if os.path.exists(os.path.join(pasta, doc_nome)):
                     try:
-                        # Abre o PDF individual e anexa ao PDF principal
-                        pdf_temp = fitz.open(caminho_doc)
+                        pdf_temp = fitz.open(os.path.join(pasta, doc_nome))
                         doc_mesclado.insert_pdf(pdf_temp)
                         pdf_temp.close()
                         tem_documento = True
-                    except Exception as erro_fitz:
-                        logger.error(f"{tracker} ⚠️ Erro ao mesclar {doc_nome}: {erro_fitz}")
-            
+                    except: pass
             if tem_documento:
-                # Salva o Dossiê com todas as páginas juntas
                 doc_mesclado.save(caminho_mesclado)
                 doc_mesclado.close()
-                
-                # Faz o upload deste Dossiê unificado para o Supabase
                 nome_arquivo_storage = f"{aluno_id}_{nome_arquivo_mesclado}"
                 with open(caminho_mesclado, "rb") as f:
-                    supabase.storage.from_("documentos_auditoria").upload(
-                        file=f,
-                        path=nome_arquivo_storage,
-                        file_options={"upsert": "true", "content-type": "application/pdf"}
-                    )
+                    supabase.storage.from_("documentos_auditoria").upload(nome_arquivo_storage, f, file_options={"upsert": "true", "content-type": "application/pdf"})
                 url_publica = supabase.storage.from_("documentos_auditoria").get_public_url(nome_arquivo_storage)
-                logger.info(f"{tracker} 📄 DOSSIÊ COMPLETO enviado para a Mesa de Auditoria: {url_publica}")
-                
-        except Exception as erro_storage:
-            logger.error(f"{tracker} ⚠️ Erro ao enviar Dossiê para o Storage: {erro_storage}")
-        # --------------------------------------------------------
+        except: pass
 
-        # --- SALVANDO O DICIONÁRIO MESMO EM ERRO ---
-        dados_salvar_erro = {
-            'status': 'REPROVADO_IA',
-            'motivo_reprovacao': str(de),
-            'documento_erro_url': url_publica
-        }
-        if getattr(de, 'dossie_parcial', None):
-            dados_salvar_erro['dados_extraidos'] = de.dossie_parcial
-
+        dados_salvar_erro = {'status': 'REPROVADO_IA', 'motivo_reprovacao': str(de), 'documento_erro_url': url_publica}
+        if getattr(de, 'dossie_parcial', None): dados_salvar_erro['dados_extraidos'] = de.dossie_parcial
         supabase.table('alunos_dossie').update(dados_salvar_erro).eq('id', aluno_id).execute()
         
     except Exception as e:
-        logger.error(f"{tracker} ❌ Falha geral no processamento: {e}", exc_info=True)
-        supabase.table('alunos_dossie').update({
-            'status': 'REPROVADO_IA',
-            'motivo_reprovacao': f"Erro Geral do Sistema: {str(e)}"
-        }).eq('id', aluno_id).execute()
+        logger.error(f"{tracker} ❌ Falha geral: {e}", exc_info=True)
+        supabase.table('alunos_dossie').update({'status': 'REPROVADO_IA', 'motivo_reprovacao': f"Erro Geral: {str(e)}"}).eq('id', aluno_id).execute()
     finally:
         sessao.close()
 

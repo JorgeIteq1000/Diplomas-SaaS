@@ -1,106 +1,186 @@
 import React, { useState, useEffect } from 'react';
-import { Search, FileText, CheckCircle, XCircle, Clock, Loader2 } from 'lucide-react';
+import { Search, Download, FileCode, Lock, CheckCircle, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
-const HistoryView: React.FC = () => {
-  const [historico, setHistorico] = useState<any[]>([]);
-  const [busca, setBusca] = useState('');
+interface AlunoEmitido {
+  id: string;
+  nome_planilha: string;
+  cpf: string;
+  curso_alvo: string;
+  status: string;
+  dados_extraidos?: {
+    urls_finais?: {
+      historico_pdf?: string;
+      diploma_xml?: string;
+    };
+  };
+}
+
+export const HistoryView: React.FC = () => {
+  const [alunos, setAlunos] = useState<AlunoEmitido[]>([]);
   const [loading, setLoading] = useState(true);
+  const [busca, setBusca] = useState('');
+
+  const fetchEmitidos = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('alunos_dossie')
+        .select('*')
+        .eq('status', 'EMITIDO_SOLIS')
+        .order('nome_planilha', { ascending: true });
+
+      if (error) throw error;
+      setAlunos(data as AlunoEmitido[]);
+    } catch (error) {
+      console.error('Erro ao buscar alunos emitidos:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const buscarHistorico = async () => {
-      try {
-        setLoading(true);
-        const { data, error } = await supabase
-          .from('alunos_dossie')
-          .select('id, nome_planilha, cpf, curso_alvo, status, data_processamento')
-          .order('id', { ascending: false })
-          .limit(100);
-
-        if (error) throw error;
-        if (data) setHistorico(data);
-      } catch (error) {
-        console.error('Erro ao buscar histórico:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    buscarHistorico();
+    fetchEmitidos();
   }, []);
 
-  const historicoFiltrado = historico.filter(aluno => 
-    aluno.nome_planilha.toLowerCase().includes(busca.toLowerCase()) || 
-    aluno.cpf.includes(busca)
+  const alunosFiltrados = alunos.filter(a => 
+    a.nome_planilha.toLowerCase().includes(busca.toLowerCase()) || 
+    a.cpf.includes(busca)
   );
 
-  const getStatusBadge = (status: string) => {
-      switch (status) {
-        case 'EMITIDO_SOLIS': 
-          return <span className="px-3 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 flex items-center gap-1"><CheckCircle className="w-3 h-3"/> Enviado para Registro</span>;
-        case 'REPROVADO_IA':
-        case 'REPROVADO_ROTA': 
-          return <span className="px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 flex items-center gap-1"><XCircle className="w-3 h-3"/> Falha na Auditoria</span>;
-        case 'EM_ANALISE_IA': 
-          return <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin"/> Processando (IA)</span>;
-        case 'AGUARDANDO_ROBO':
-        default: 
-          return <span className="px-3 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 flex items-center gap-1"><Clock className="w-3 h-3"/> Fila de Espera</span>;
-      }
-    };
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
+      </div>
+    );
+  }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <div className="p-8 max-w-7xl mx-auto space-y-8 h-full flex flex-col">
       <div>
-        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Histórico e Compliance</h1>
-        <p className="text-slate-500 mt-1">Registo de auditoria completo para o MEC. Pesquisa por Nome ou CPF.</p>
+        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Acervo de Documentos</h1>
+        <p className="text-slate-500 mt-2">Pesquise alunos e faça o download dos Históricos e Diplomas emitidos.</p>
       </div>
 
-      <div className="bg-white p-4 rounded-xl border border-slate-200 flex items-center shadow-sm">
-        <Search className="w-5 h-5 text-slate-400 ml-2 mr-3" />
+      {/* BARRA DE PESQUISA */}
+      <div className="relative">
+        <Search className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
         <input 
           type="text" 
-          placeholder="Procurar aluno..." 
+          placeholder="Pesquisar por nome ou CPF..." 
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
-          className="flex-1 bg-transparent border-none outline-none text-slate-700 placeholder-slate-400"
+          className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none shadow-sm transition-all"
         />
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-        {loading ? (
-          <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 text-blue-500 animate-spin" /></div>
-        ) : (
-          <table className="w-full text-left">
-            <thead className="bg-slate-50 border-b border-slate-200">
-              <tr>
-                <th className="px-6 py-4 text-sm font-semibold text-slate-600">Nome do Aluno</th>
-                <th className="px-6 py-4 text-sm font-semibold text-slate-600">CPF</th>
-                <th className="px-6 py-4 text-sm font-semibold text-slate-600">Curso Alvo</th>
-                <th className="px-6 py-4 text-sm font-semibold text-slate-600">Status Final</th>
+      {/* TABELA DE ALUNOS */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
+        <div className="overflow-x-auto flex-1">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-sm font-semibold text-slate-600">
+                <th className="p-4">Aluno</th>
+                <th className="p-4">CPF</th>
+                <th className="p-4">Curso Emitido</th>
+                <th className="p-4">Status</th>
+                <th className="p-4 text-right">Documentos</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {historicoFiltrado.length === 0 ? (
-                <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-500">Nenhum registo encontrado.</td></tr>
+              {alunosFiltrados.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="p-8 text-center text-slate-500">
+                    Nenhum aluno encontrado ou emitido ainda.
+                  </td>
+                </tr>
               ) : (
-                historicoFiltrado.map(aluno => (
-                  <tr key={aluno.id} className="hover:bg-slate-50 transition-colors cursor-pointer">
-                    <td className="px-6 py-4 font-medium text-slate-800 flex items-center gap-3">
-                      <div className="p-2 bg-slate-100 rounded-lg"><FileText className="w-4 h-4 text-slate-500" /></div>
-                      {aluno.nome_planilha}
-                    </td>
-                    <td className="px-6 py-4 text-slate-600 text-sm font-mono">{aluno.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")}</td>
-                    <td className="px-6 py-4 text-slate-600 text-sm">{aluno.curso_alvo}</td>
-                    <td className="px-6 py-4">{getStatusBadge(aluno.status)}</td>
-                  </tr>
-                ))
+                alunosFiltrados.map((aluno) => {
+                  const urls = aluno.dados_extraidos?.urls_finais;
+                  
+                  return (
+                    <tr key={aluno.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="p-4 font-medium text-slate-800">{aluno.nome_planilha}</td>
+                      <td className="p-4 text-slate-500 font-mono text-sm">
+                        {aluno.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")}
+                      </td>
+                      <td className="p-4 text-slate-600 text-sm">{aluno.curso_alvo}</td>
+                      <td className="p-4">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
+                          <CheckCircle className="w-3.5 h-3.5" /> Emitido
+                        </span>
+                      </td>
+                      <td className="p-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          
+                          {/* BOTÃO 1: HISTÓRICO PDF */}
+                          {urls?.historico_pdf ? (
+                            <a 
+                              href={urls.historico_pdf} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg transition-colors"
+                              title="Baixar Histórico Escolar (PDF)"
+                            >
+                              <Download className="w-4 h-4" /> Histórico
+                            </a>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-400 text-xs font-medium rounded-lg">
+                              Sem Histórico
+                            </span>
+                          )}
+
+                          {/* BOTÃO 2: DIPLOMA XML */}
+                          {urls?.diploma_xml ? (
+                            <a 
+                              href={urls.diploma_xml} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors"
+                              title="Baixar Diploma para Registro (XML)"
+                            >
+                              <FileCode className="w-4 h-4" /> XML Diploma
+                            </a>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-400 text-xs font-medium rounded-lg">
+                              Sem XML
+                            </span>
+                          )}
+
+                          {/* BOTÃO 3: DIPLOMA PDF (DINÂMICO) */}
+                          {urls?.diploma_pdf ? (
+                            <a 
+                              href={urls.diploma_pdf} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded-lg transition-colors shadow-sm"
+                              title="Baixar Diploma Registrado (PDF)"
+                            >
+                              <Download className="w-4 h-4" /> Diploma PDF
+                            </a>
+                          ) : (
+                            <div 
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-400 text-xs font-medium rounded-lg cursor-not-allowed group relative"
+                            >
+                              <Lock className="w-3.5 h-3.5" /> Diploma PDF
+                              {/* Tooltip Hover */}
+                              <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block w-48 p-2 bg-slate-800 text-white text-xs text-center rounded shadow-lg z-10">
+                                Aguardando o Registro oficial da Instituição de Ensino.
+                              </div>
+                            </div>
+                          )}
+
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
-        )}
+        </div>
       </div>
     </div>
   );
 };
-
-export { HistoryView };
