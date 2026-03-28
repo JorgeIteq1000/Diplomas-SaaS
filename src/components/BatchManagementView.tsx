@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { UploadCloud, FileText, CheckCircle, Clock, AlertCircle, Loader2 } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle, Clock, AlertCircle, Loader2, Tag } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import * as XLSX from 'xlsx';
 
@@ -14,12 +14,13 @@ const BatchManagementView: React.FC = () => {
   const [lotes, setLotes] = useState<Lote[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [nomeLote, setNomeLote] = useState(''); // Estado para o nome digitado pelo usuário
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchLotes = async () => {
     try {
       setLoading(true);
-      console.log('🔄 A buscar lotes na base de dados...');
       const { data, error } = await supabase
         .from('lotes')
         .select('*')
@@ -28,7 +29,6 @@ const BatchManagementView: React.FC = () => {
       if (error) throw error;
       
       if (data) {
-        console.log(`✅ ${data.length} lotes encontrados!`, data);
         setLotes(data as Lote[]);
       }
     } catch (error) {
@@ -39,14 +39,37 @@ const BatchManagementView: React.FC = () => {
   };
 
   useEffect(() => {
+    // 1. Carrega os lotes a primeira vez que entra na página
     fetchLotes();
+
+    // 2. Cria o "Rádio" para ouvir as mudanças no Supabase em Tempo Real
+    const inscricaoLotes = supabase
+      .channel('observador-lotes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Ouve qualquer coisa (INSERT, UPDATE, DELETE)
+          schema: 'public',
+          table: 'lotes',
+        },
+        (payload) => {
+          console.log('⚡ Mágica Realtime a acontecer! Lote atualizado:', payload);
+          // Quando o Python atualiza o Lote, o React atualiza a tela na hora!
+          fetchLotes(); 
+        }
+      )
+      .subscribe();
+
+    // 3. Desliga o rádio se sairmos da página (para poupar memória)
+    return () => {
+      supabase.removeChannel(inscricaoLotes);
+    };
   }, []);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    console.log(`📂 Ficheiro selecionado: ${file.name}`);
     setUploading(true);
 
     try {
@@ -56,34 +79,29 @@ const BatchManagementView: React.FC = () => {
       const firstSheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[firstSheetName];
       
-      // Converter para JSON (esperamos um array de arrays para ignorar o cabeçalho facilmente)
       const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
       
-      // Filtrar linhas vazias e remover o cabeçalho (índice 0)
       const linhasValidas = data.filter(row => row.length >= 3);
       if (linhasValidas.length <= 1) {
         throw new Error('A planilha parece estar vazia ou não tem as colunas corretas (Nome, CPF, Curso).');
       }
-      const alunosParaProcessar = linhasValidas.slice(1); // Ignora a linha 1 (cabeçalhos)
+      const alunosParaProcessar = linhasValidas.slice(1); 
       
-      console.log(`📊 Planilha lida com sucesso. Encontrados ${alunosParaProcessar.length} alunos.`);
-
-      // 2. Criar o Registo do Lote na tabela 'lotes'
-      const nomeDoLote = `Lote Automático - ${new Date().toLocaleDateString('pt-PT')} ${new Date().toLocaleTimeString('pt-PT')}`;
-      console.log(`📦 A criar o lote: ${nomeDoLote}`);
+      // 2. Definir o nome do lote (Usa o que foi digitado, ou gera automático se vazio)
+      const nomeFinalDoLote = nomeLote.trim() !== '' 
+        ? nomeLote.trim() 
+        : `Lote Automático - ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}`;
       
       const { data: loteData, error: loteError } = await supabase
         .from('lotes')
-        .insert([{ nome_lote: nomeDoLote, status: 'PENDENTE' }])
+        .insert([{ nome_lote: nomeFinalDoLote, status: 'PENDENTE' }])
         .select()
         .single();
 
       if (loteError) throw loteError;
-      console.log('✅ Lote criado com sucesso! ID:', loteData.id);
 
       // 3. Inserir os alunos na tabela 'alunos_dossie'
       const insertsAlunos = alunosParaProcessar.map(linha => {
-        // Assume que a estrutura do Excel é: [Nome, CPF, Curso]
         const nomeBruto = String(linha[0] || '').trim();
         const cpfBruto = String(linha[1] || '').trim().replace(/\D/g, '').padStart(11, '0');
         const cursoAlvo = String(linha[2] || '').trim();
@@ -97,25 +115,22 @@ const BatchManagementView: React.FC = () => {
         };
       });
 
-      console.log('⏳ A enviar lista de alunos para a base de dados...', insertsAlunos);
       const { error: alunosError } = await supabase
         .from('alunos_dossie')
         .insert(insertsAlunos);
 
       if (alunosError) throw alunosError;
       
-      console.log('🚀 Sucesso absoluto! Alunos na fila de espera.');
-      alert('Upload concluído com sucesso! Os alunos estão na fila.');
+      alert(`Upload concluído! O "${nomeFinalDoLote}" já está na fila do robô.`);
       
-      // Atualizar a tabela visual no ecrã
-      fetchLotes();
+      setNomeLote(''); // Limpa o campo de texto
+      fetchLotes(); // Atualiza a tabela
 
     } catch (error: any) {
-      console.error('❌ Erro catastrófico no upload:', error);
-      alert(`Erro ao processar o ficheiro: ${error.message}`);
+      console.error('❌ Erro no upload:', error);
+      alert(`Erro ao processar a planilha: ${error.message}`);
     } finally {
       setUploading(false);
-      // Limpar o input para permitir enviar o mesmo ficheiro novamente
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -133,31 +148,55 @@ const BatchManagementView: React.FC = () => {
     <div className="p-8 max-w-6xl mx-auto space-y-8">
       <div>
         <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Gestão de Lotes</h1>
-        <p className="text-slate-500 mt-2">Faça o upload da planilha e acompanhe a fila de processamento da IA.</p>
+        <p className="text-slate-500 mt-2">Nomeie seu lote, faça o upload da planilha e acompanhe a fila de processamento da IA.</p>
       </div>
 
-      {/* ÁREA DE UPLOAD FUNCIONAL */}
-      <input 
-        type="file" 
-        accept=".xlsx, .xls" 
-        className="hidden" 
-        ref={fileInputRef} 
-        onChange={handleFileUpload} 
-      />
-      
-      <div 
-        onClick={() => !uploading && fileInputRef.current?.click()}
-        className={`border-2 border-dashed border-slate-300 rounded-2xl p-12 text-center bg-white transition-colors group ${uploading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-slate-50 cursor-pointer'}`}
-      >
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 text-blue-600 mb-6 group-hover:scale-110 transition-transform">
-          {uploading ? <Loader2 className="w-8 h-8 animate-spin" /> : <UploadCloud className="w-8 h-8" />}
+      {/* ÁREA DE CONFIGURAÇÃO E UPLOAD */}
+      <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm">
+        
+        {/* INPUT DE NOME DO LOTE */}
+        <div className="mb-6">
+          <label className="block text-sm font-semibold text-slate-700 mb-2">
+            Nome do Lote <span className="text-slate-400 font-normal">(Opcional)</span>
+          </label>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+              <Tag className="h-5 w-5 text-slate-400" />
+            </div>
+            <input
+              type="text"
+              value={nomeLote}
+              onChange={(e) => setNomeLote(e.target.value)}
+              placeholder="Ex: Licenciaturas - Março 2026"
+              className="block w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all text-slate-700 font-medium placeholder-slate-400"
+              disabled={uploading}
+            />
+          </div>
         </div>
-        <h3 className="text-xl font-semibold text-slate-700 mb-2">
-          {uploading ? 'A ler e gravar alunos...' : 'Clique para selecionar o ficheiro Excel'}
-        </h3>
-        <p className="text-slate-500 mb-6 max-w-md mx-auto">
-          Faça o upload da <span className="font-semibold text-slate-700">Planilha .XLSX</span> de alunos para disparar o robô.
-        </p>
+
+        {/* ÁREA DE DRAG & DROP / CLICK */}
+        <input 
+          type="file" 
+          accept=".xlsx, .xls" 
+          className="hidden" 
+          ref={fileInputRef} 
+          onChange={handleFileUpload} 
+        />
+        
+        <div 
+          onClick={() => !uploading && fileInputRef.current?.click()}
+          className={`border-2 border-dashed border-slate-300 rounded-xl p-10 text-center transition-colors group ${uploading ? 'bg-slate-50 opacity-70 cursor-not-allowed' : 'hover:bg-blue-50/50 hover:border-blue-300 cursor-pointer'}`}
+        >
+          <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full mb-4 transition-transform ${uploading ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600 group-hover:scale-110'}`}>
+            {uploading ? <Loader2 className="w-8 h-8 animate-spin" /> : <UploadCloud className="w-8 h-8" />}
+          </div>
+          <h3 className="text-lg font-semibold text-slate-700 mb-1">
+            {uploading ? 'A enviar planilha e processar alunos...' : 'Clique para selecionar a Planilha Excel'}
+          </h3>
+          <p className="text-sm text-slate-500 max-w-sm mx-auto">
+            Formato esperado: <span className="font-semibold">.XLSX</span> com colunas de Nome, CPF e Curso.
+          </p>
+        </div>
       </div>
 
       {/* FILA DE PROCESSAMENTO */}
@@ -186,14 +225,14 @@ const BatchManagementView: React.FC = () => {
                       {statusInfo.icon}
                     </div>
                     <div>
-                      <h4 className="text-lg font-medium text-slate-900">{lote.nome_lote}</h4>
+                      <h4 className="text-lg font-bold text-slate-800">{lote.nome_lote}</h4>
                       <p className="text-sm text-slate-500 mt-1">
-                        Criado em: {new Date(lote.data_criacao).toLocaleDateString('pt-PT', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        Criado em: {new Date(lote.data_criacao).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-6">
-                    <span className={`px-4 py-1.5 rounded-full text-sm font-medium border ${statusInfo.color}`}>
+                    <span className={`px-4 py-1.5 rounded-full text-sm font-bold border ${statusInfo.color}`}>
                       {statusInfo.text}
                     </span>
                   </div>
