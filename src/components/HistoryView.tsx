@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Download, FileCode, Lock, CheckCircle, Loader2, Filter, Edit2, Save, X, ArrowDownAZ, ArrowUpZA } from 'lucide-react';
+import { Search, Download, FileCode, Lock, CheckCircle, Loader2, Filter, Edit2, Save, X, ArrowDownAZ, ArrowUpZA, Send } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
 interface LoteInfo {
@@ -14,7 +14,7 @@ interface AlunoEmitido {
   curso_alvo: string;
   status: string;
   lote_id: string;
-  lotes?: LoteInfo; // Recebe o JOIN do banco de dados
+  lotes?: LoteInfo;
   dados_extraidos?: {
     urls_finais?: {
       historico_pdf?: string;
@@ -45,22 +45,20 @@ export const HistoryView: React.FC = () => {
     try {
       setLoading(true);
       
-      // 1. Busca os alunos emitidos e faz um JOIN com a tabela lotes para pegar o nome
       const { data: alunosData, error: alunosError } = await supabase
         .from('alunos_dossie')
         .select('*, lotes(id, nome_lote)')
-        .eq('status', 'EMITIDO_SOLIS');
+        // Atualizado para buscar alunos emitidos ou que já foram notificados
+        .in('status', ['EMITIDO_SOLIS', 'AGUARDANDO_ENVIO', 'CONCLUIDO_NOTIFICADO']);
 
       if (alunosError) throw alunosError;
       
       const alunosCarregados = alunosData as AlunoEmitido[];
       setAlunos(alunosCarregados);
 
-      // Extrai a lista de cursos únicos para o filtro dinâmico
       const cursosUnicos = Array.from(new Set(alunosCarregados.map(a => a.curso_alvo))).filter(Boolean).sort();
       setCursosDisponiveis(cursosUnicos);
 
-      // 2. Busca todos os lotes globais para o Filtro e para o Dropdown de Troca
       const { data: lotesData, error: lotesError } = await supabase
         .from('lotes')
         .select('id, nome_lote')
@@ -80,7 +78,6 @@ export const HistoryView: React.FC = () => {
     carregarDados();
   }, []);
 
-  // Função que salva a troca de lote no banco e atualiza a tela
   const handleSalvarTrocaLote = async (alunoId: string) => {
     if (!novoLoteIdSelecionado) return;
     
@@ -93,7 +90,6 @@ export const HistoryView: React.FC = () => {
 
       if (error) throw error;
       
-      // Atualiza o visual sem precisar recarregar o banco
       const loteNome = lotesDisponiveis.find(l => l.id === novoLoteIdSelecionado)?.nome_lote || '';
       setAlunos(alunosAtuais => 
         alunosAtuais.map(aluno => {
@@ -117,7 +113,31 @@ export const HistoryView: React.FC = () => {
     }
   };
 
-  // Aplica os filtros combinados (Texto + Lote + Curso) e ordena (A-Z ou Z-A)
+  // --- NOVA FUNÇÃO: DISPARO DE COMUNICAÇÃO MANUAL ---
+  const handleDispararComunicacao = async (alunoId: string, nomeAluno: string) => {
+    if (!window.confirm(`Tem a certeza que deseja notificar ${nomeAluno} agora? Confirme se os documentos já estão registrados.`)) return;
+    
+    try {
+      const { error } = await supabase
+        .from('alunos_dossie')
+        .update({ status: 'AGUARDANDO_ENVIO' })
+        .eq('id', alunoId);
+      
+      if (error) throw error;
+      
+      // Atualiza o status localmente para refletir na interface
+      setAlunos(alunosAtuais => 
+        alunosAtuais.map(aluno => 
+          aluno.id === alunoId ? { ...aluno, status: 'AGUARDANDO_ENVIO' } : aluno
+        )
+      );
+      
+      alert("✅ Aluno enviado para a fila de comunicação! O robô fará o disparo em instantes.");
+    } catch (error: any) {
+      alert(`Erro ao agendar notificação: ${error.message}`);
+    }
+  };
+
   const alunosFiltradosEOrdenados = alunos
     .filter(a => {
       const matchBusca = a.nome_planilha.toLowerCase().includes(busca.toLowerCase()) || a.cpf.includes(busca);
@@ -145,13 +165,11 @@ export const HistoryView: React.FC = () => {
     <div className="p-8 max-w-7xl mx-auto space-y-8 h-full flex flex-col">
       <div>
         <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Acervo de Documentos</h1>
-        <p className="text-slate-500 mt-2">Pesquise, filtre por Lotes/Cursos e baixe os documentos emitidos.</p>
+        <p className="text-slate-500 mt-2">Pesquise, filtre por Lotes/Cursos e baixe ou envie os documentos emitidos.</p>
       </div>
 
-      {/* BARRA DE PESQUISA E FILTROS */}
       <div className="flex gap-4 items-center">
         
-        {/* Pesquisa por Texto */}
         <div className="relative flex-1">
           <Search className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
           <input 
@@ -163,7 +181,6 @@ export const HistoryView: React.FC = () => {
           />
         </div>
 
-        {/* Filtro por Lote */}
         <div className="relative w-64">
           <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
             <Filter className="w-5 h-5" />
@@ -185,7 +202,6 @@ export const HistoryView: React.FC = () => {
           </div>
         </div>
 
-        {/* Filtro por Curso */}
         <div className="relative w-64">
           <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
             <Filter className="w-5 h-5" />
@@ -207,7 +223,6 @@ export const HistoryView: React.FC = () => {
           </div>
         </div>
 
-        {/* Botão de Ordem Alfabética */}
         <button 
           onClick={() => setOrdemAlfabetica(prev => prev === 'ASC' ? 'DESC' : 'ASC')}
           className="p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors shadow-sm text-slate-700 flex items-center justify-center flex-shrink-0"
@@ -218,7 +233,6 @@ export const HistoryView: React.FC = () => {
 
       </div>
 
-      {/* TABELA DE ALUNOS */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
         <div className="overflow-x-auto flex-1">
           <table className="w-full text-left border-collapse">
@@ -228,7 +242,7 @@ export const HistoryView: React.FC = () => {
                 <th className="p-4">Lote Pertencente</th>
                 <th className="p-4">Curso Emitido</th>
                 <th className="p-4">Status</th>
-                <th className="p-4 text-right">Documentos</th>
+                <th className="p-4 text-right">Ações & Documentos</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -241,6 +255,8 @@ export const HistoryView: React.FC = () => {
               ) : (
                 alunosFiltradosEOrdenados.map((aluno) => {
                   const urls = aluno.dados_extraidos?.urls_finais;
+                  const isNotificado = aluno.status === 'CONCLUIDO_NOTIFICADO';
+                  const isAguardandoEnvio = aluno.status === 'AGUARDANDO_ENVIO';
                   
                   return (
                     <tr key={aluno.id} className="hover:bg-slate-50 transition-colors">
@@ -249,7 +265,6 @@ export const HistoryView: React.FC = () => {
                         <p className="text-xs text-slate-500 font-mono mt-0.5">{aluno.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")}</p>
                       </td>
                       
-                      {/* CÉLULA DO LOTE (COM EDIÇÃO INLINE) */}
                       <td className="p-4">
                         {editandoLoteAlunoId === aluno.id ? (
                           <div className="flex items-center gap-2">
@@ -300,14 +315,30 @@ export const HistoryView: React.FC = () => {
 
                       <td className="p-4 text-slate-600 text-sm max-w-[200px] truncate" title={aluno.curso_alvo}>{aluno.curso_alvo}</td>
                       <td className="p-4">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
-                          <CheckCircle className="w-3.5 h-3.5" /> Emitido
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${isNotificado ? 'bg-indigo-100 text-indigo-700' : isAguardandoEnvio ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                          {isAguardandoEnvio ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />} 
+                          {isNotificado ? 'Notificado' : isAguardandoEnvio ? 'Fila de Envio' : 'Emitido'}
                         </span>
                       </td>
                       <td className="p-4 text-right">
                         <div className="flex items-center justify-end gap-2">
                           
-                          {/* BOTÃO 1: HISTÓRICO PDF */}
+                          {/* BOTÃO DE DISPARO DE COMUNICAÇÃO (NOVO) */}
+                          <button
+                            onClick={() => handleDispararComunicacao(aluno.id, aluno.nome_planilha)}
+                            disabled={isAguardandoEnvio}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors shadow-sm ${
+                              isNotificado 
+                                ? 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200' 
+                                : isAguardandoEnvio
+                                  ? 'bg-amber-100 text-amber-500 cursor-not-allowed'
+                                  : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                            }`}
+                            title={isNotificado ? "Reenviar Documentos" : "Enviar Documentos ao Aluno"}
+                          >
+                            <Send className="w-4 h-4" /> {isNotificado ? "Reenviar" : "Notificar"}
+                          </button>
+                          
                           {urls?.historico_pdf ? (
                             <a 
                               href={urls.historico_pdf} 
@@ -324,7 +355,6 @@ export const HistoryView: React.FC = () => {
                             </span>
                           )}
 
-                          {/* BOTÃO 2: DIPLOMA XML */}
                           {urls?.diploma_xml ? (
                             <a 
                               href={urls.diploma_xml} 
@@ -341,7 +371,6 @@ export const HistoryView: React.FC = () => {
                             </span>
                           )}
 
-                          {/* BOTÃO 3: DIPLOMA PDF (DINÂMICO) */}
                           {urls?.diploma_pdf ? (
                             <a 
                               href={urls.diploma_pdf} 
@@ -355,7 +384,6 @@ export const HistoryView: React.FC = () => {
                           ) : (
                             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-400 text-xs font-medium rounded-lg cursor-not-allowed group relative">
                               <Lock className="w-3.5 h-3.5" /> Diploma PDF
-                              {/* Tooltip Hover */}
                               <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block w-48 p-2 bg-slate-800 text-white text-xs text-center rounded shadow-lg z-10">
                                 Aguardando o Registro oficial da Instituição de Ensino.
                               </div>

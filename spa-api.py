@@ -24,6 +24,9 @@ from Crypto.Util.Padding import pad, unpad
 from thefuzz import fuzz
 import google.generativeai as genai
 from supabase import create_client, Client
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # ==========================================
 # VALIDAÇÃO LOCAL STRONGER (CAÇADOR DE DATAS)
@@ -75,7 +78,8 @@ oficio_lock = threading.Lock()
 csv_lock = threading.Lock()
 
 ARQUIVO_EXCEL = "lista_alunos.xlsx"
-DIRETORIO_BASE_SERVIDOR = r"Z:\CERTIFICADOS (OFICIAL)\RELATÓRIO FINAL (OFICIAL)\LICENCIATURAS (OFICIAL)\MONTAGEM DE LOTES\LOTES MENSAIS\2026\DOC'S AGENTE"
+    #DIRETORIO_BASE_SERVIDOR = r"Z:\CERTIFICADOS (OFICIAL)\RELATÓRIO FINAL (OFICIAL)\LICENCIATURAS (OFICIAL)\MONTAGEM DE LOTES\LOTES MENSAIS\2026\DOC'S AGENTE"
+DIRETORIO_BASE_SERVIDOR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Docs_Teste")
 
 DIRETORIO_LOTE = os.path.join(os.path.dirname(DIRETORIO_BASE_SERVIDOR), "Lote")
 DIRETORIO_HISTORICOS_XML = os.path.join(DIRETORIO_LOTE, "Históricos xml")
@@ -1071,6 +1075,119 @@ def enviar_lote_assinatura(token_solis):
         logger.error(f"Erro ao enviar lote: {e}")
 
 # ==========================================
+# MOTOR DE COMUNICAÇÃO (CARTEIRO)
+# ==========================================
+def notificar_aluno(aluno_dados, supabase):
+    """
+    Função que busca as configurações do banco e dispara E-mail e WhatsApp.
+    aluno_dados deve ser um dicionário com: nome, email, telefone, curso, link_diploma, link_historico, codigo_mec
+    """
+    logger.info(f"📬 [COMUNICAÇÃO] Iniciando envio para {aluno_dados.get('nome', 'Aluno')}...")
+    
+    try:
+        # 1. Busca as configurações no banco
+        resp_config = supabase.table('config_sistema').select('*').eq('id', 1).execute()
+        if not resp_config.data:
+            logger.warning("⚠️ [COMUNICAÇÃO] Configurações não encontradas no banco.")
+            return
+        config = resp_config.data[0]
+        
+        # 2. Prepara o Dicionário de Variáveis Mágicas
+        mapa_variaveis = {
+            '[NOME_ALUNO]': str(aluno_dados.get('nome', '')),
+            '[CURSO]': str(aluno_dados.get('curso', '')),
+            '[LINK_DOCUMENTO]': str(aluno_dados.get('link_diploma', '')),
+            '[LINK_HISTORICO]': str(aluno_dados.get('link_historico', '')),
+            '[CODIGO_MEC]': str(aluno_dados.get('codigo_mec', ''))
+        }
+
+        # ─── DISPARO DE E-MAIL (SMTP) ─────────────────────────────────────────
+        email_aluno = aluno_dados.get('email')
+        if email_aluno and config.get('smtp_host') and config.get('smtp_user'):
+            try:
+                assunto = config.get('email_assunto', 'Seu Diploma')
+                corpo = config.get('email_corpo', '')
+                
+                for chave, valor in mapa_variaveis.items():
+                    assunto = assunto.replace(chave, valor)
+                    corpo = corpo.replace(chave, valor)
+                
+                msg = MIMEMultipart()
+                msg['From'] = config['smtp_user']
+                msg['To'] = email_aluno
+                msg['Subject'] = assunto
+                msg.attach(MIMEText(corpo, 'plain'))
+                
+                logger.info(f"📧 [EMAIL] Enviando para {email_aluno} via {config['smtp_host']}...")
+                try:
+                    server = smtplib.SMTP_SSL(config['smtp_host'], config['smtp_port'], timeout=10)
+                except:
+                    server = smtplib.SMTP(config['smtp_host'], config['smtp_port'], timeout=10)
+                    server.starttls()
+                    
+                server.login(config['smtp_user'], config['smtp_password'])
+                server.send_message(msg)
+                server.quit()
+                logger.info("✅ [EMAIL] Enviado com sucesso!")
+            except Exception as e_email:
+                logger.error(f"❌ [EMAIL] Falha ao enviar: {e_email}")
+        else:
+            logger.info("⏭️ [EMAIL] Ignorado (E-mail do aluno ou credenciais SMTP ausentes).")
+
+        # ─── DISPARO DE WHATSAPP (META API) ───────────────────────────────────
+        telefone_aluno = aluno_dados.get('telefone')
+        if config.get('whatsapp_ativo') and telefone_aluno and config.get('whatsapp_api_url'):
+            try:
+                logger.info(f"📱 [WHATSAPP] Enviando template para {telefone_aluno}...")
+                
+                raw_vars = config.get('whatsapp_variaveis', '').split(',')
+                parametros_wpp = []
+                
+                for rv in raw_vars:
+                    chave_limpa = rv.strip()
+                    valor_real = mapa_variaveis.get(chave_limpa, '')
+                    parametros_wpp.append({
+                        "type": "text",
+                        "text": valor_real
+                    })
+                
+                payload = {
+                    "messaging_product": "whatsapp",
+                    "to": str(telefone_aluno).replace("+", "").replace("-", "").replace(" ", ""),
+                    "type": "template",
+                    "template": {
+                        "name": config['whatsapp_template_nome'],
+                        "language": { "code": "pt_BR" },
+                        "components": [
+                            {
+                                "type": "body",
+                                "parameters": parametros_wpp
+                            }
+                        ]
+                    }
+                }
+                
+                headers = {
+                    "Authorization": f"Bearer {config['whatsapp_token']}",
+                    "Content-Type": "application/json"
+                }
+                
+                resp_wpp = requests.post(config['whatsapp_api_url'], json=payload, headers=headers, timeout=15)
+                
+                if resp_wpp.ok:
+                    logger.info("✅ [WHATSAPP] Mensagem disparada com sucesso!")
+                else:
+                    logger.warning(f"⚠️ [WHATSAPP] Retorno da Meta: {resp_wpp.status_code} - {resp_wpp.text}")
+                    
+            except Exception as e_wpp:
+                logger.error(f"❌ [WHATSAPP] Falha ao conectar com a API: {e_wpp}")
+        else:
+            logger.info("⏭️ [WHATSAPP] Ignorado (Desativado, sem telefone ou sem URL).")
+
+    except Exception as e_geral:
+        logger.error(f"❌ [COMUNICAÇÃO] Erro crítico no motor de envio: {e_geral}")
+
+# ==========================================
 # ORQUESTRADOR CENTRAL (1 Aluno) - VERSÃO SUPABASE
 # ==========================================
 def processar_aluno(aluno_db, t_esp, t_solis, mods_w, chaves_pdf, listas_hostinger):
@@ -1134,6 +1251,7 @@ def processar_aluno(aluno_db, t_esp, t_solis, mods_w, chaves_pdf, listas_hosting
         dossie["urls_finais"] = {"historico_pdf": url_historico, "diploma_xml": url_xml}
 
         # 🎉 SUCESSO TOTAL
+        # Agora a esteira apenas salva e encerra (O Carteiro foi para outro Motor!)
         supabase.table('alunos_dossie').update({'status': 'EMITIDO_SOLIS', 'dados_extraidos': dossie}).eq('id', aluno_id).execute()
         
     except DocumentacaoInvalidaError as de:
@@ -1165,25 +1283,21 @@ def processar_aluno(aluno_db, t_esp, t_solis, mods_w, chaves_pdf, listas_hosting
         if getattr(de, 'dossie_parcial', None): dados_salvar_erro['dados_extraidos'] = de.dossie_parcial
         supabase.table('alunos_dossie').update(dados_salvar_erro).eq('id', aluno_id).execute()
         
-        # --- INÍCIO DA ADIÇÃO: WEBHOOK DO BITRIX ---
+        # --- WEBHOOK DO BITRIX ---
         try:
-            # Vai no banco de dados ver o que o Admin digitou na tela de configurações!
             resp_config = supabase.table('config_sistema').select('bitrix_webhook_url').eq('id', 1).execute()
             webhook_bitrix = resp_config.data[0].get('bitrix_webhook_url') if resp_config.data else None
             
             if webhook_bitrix and webhook_bitrix.strip() != "":
                 logger.info(f"{tracker} 🔔 [WEBHOOK] Iniciando notificação de diligência para o Bitrix...")
                 
-                # Monta a mensagem que vai chegar no Bitrix para a equipe
                 payload_bitrix = {
                     "aluno": nome_bruto,
                     "cpf": cpf,
                     "motivo_reprovacao": str(de),
-                    # Ajuste o domínio abaixo para a URL real onde sua aplicação React está hospedada
                     "link_auditoria": "https://seu-sistema.com/auditoria" 
                 }
                 
-                # Dispara o aviso via POST
                 resposta_bitrix = requests.post(webhook_bitrix, json=payload_bitrix, timeout=15)
                 
                 if resposta_bitrix.ok:
@@ -1193,7 +1307,6 @@ def processar_aluno(aluno_db, t_esp, t_solis, mods_w, chaves_pdf, listas_hosting
                     
         except Exception as erro_webhook:
             logger.error(f"{tracker} ❌ [WEBHOOK] Falha ao consultar banco ou comunicar com o Bitrix: {erro_webhook}")
-        # --- FIM DA ADIÇÃO ---
         
     except Exception as e:
         logger.error(f"{tracker} ❌ Falha geral: {e}", exc_info=True)
@@ -1202,7 +1315,49 @@ def processar_aluno(aluno_db, t_esp, t_solis, mods_w, chaves_pdf, listas_hosting
         sessao.close()
 
 # ==========================================
-# BOOT E MULTITHREADING (O NOVO MOTOR SUPABASE)
+# NOVO MOTOR DE DISPAROS (GATILHO MANUAL)
+# ==========================================
+def motor_de_disparos_autonomo():
+    try:
+        # Procura alunos que o Admin mandou notificar via React
+        resposta = supabase.table("alunos_dossie").select("*").eq("status", "AGUARDANDO_ENVIO").execute()
+        tarefas_envio = resposta.data
+        
+        if not tarefas_envio:
+            return # Fica quietinho se não tiver ninguém na fila de comunicação
+            
+        logger.info(f"📬 [MOTOR DE ENVIOS] Encontrados {len(tarefas_envio)} alunos para notificar. Iniciando disparos...")
+        
+        for aluno in tarefas_envio:
+            try:
+                # Puxa os links que já foram gerados e salvos lá no JSON do banco
+                dados = aluno.get("dados_extraidos", {})
+                urls = dados.get("urls_finais", {})
+                
+                dados_para_envio = {
+                    "nome": str(aluno.get("nome_planilha", "")),
+                    "email": str(aluno.get("email", "")),
+                    "telefone": str(aluno.get("telefone", "")),
+                    "curso": str(aluno.get("curso_alvo", "")),
+                    # Pega os links do Storage que a esteira já salvou!
+                    "link_diploma": urls.get("diploma_xml") or "Link indisponível", 
+                    "link_historico": urls.get("historico_pdf") or "Link indisponível",
+                    "codigo_mec": "Registrado com Sucesso" # Aqui podemos ajustar depois quando houver
+                }
+                
+                # Chama o nosso Carteiro
+                notificar_aluno(dados_para_envio, supabase)
+                
+                # Atualiza o status para mostrar que já foi enviado
+                supabase.table("alunos_dossie").update({"status": "CONCLUIDO_NOTIFICADO"}).eq("id", aluno["id"]).execute()
+                
+            except Exception as e:
+                logger.error(f"❌ Erro ao processar envio para o aluno ID {aluno.get('id')}: {e}")
+    except Exception as e:
+        logger.error(f"❌ Erro crítico no motor de envios: {e}")
+
+# ==========================================
+# BOOT E MULTITHREADING
 # ==========================================
 def motor_certificacao_autonomo():
     logger.info("🌟 VERIFICANDO FILA NO SUPABASE 🌟")
@@ -1262,14 +1417,18 @@ def motor_certificacao_autonomo():
     logger.info("🏁 LOTE FINALIZADO NO SUPABASE!")
 
 if __name__ == "__main__":
-    logger.info("🤖 Robô em modo Sentinela ativado! Monitorando o Supabase em tempo real...")
+    logger.info("🤖 Robôs em modo Sentinela ativados! Monitorando a Fabrica e a Fila de Envios...")
     
     while True:
         try:
-            # Roda o motor
+            # Motor 1: Faz os PDFs e XMLs
             motor_certificacao_autonomo()
+            
+            # Motor 2: Manda os E-mails e Zaps (Quando o botão for clicado no React)
+            motor_de_disparos_autonomo()
+            
         except Exception as e:
-            logger.error(f"❌ Erro crítico no motor: {e}")
+            logger.error(f"❌ Erro crítico no loop principal: {e}")
         
         # Espera 10 segundos e tenta de novo infinitamente
         time.sleep(10)

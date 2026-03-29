@@ -10,6 +10,8 @@ import { SettingsView } from './components/SettingsView';
 import { TeamManagementView } from './components/TeamManagementView'; // A NOSSA TELA NOVA AQUI!
 import { LoginView } from './components/LoginView';
 import { Loader2, ShieldAlert } from 'lucide-react';
+import { ApiGatewayView } from './components/ApiGatewayView';
+import { CommunicationQueueView } from './components/CommunicationQueueView';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -103,7 +105,10 @@ if (userRole !== 'ADMIN' && (activeTab === 'costs' || activeTab === 'team' || ac
       case 'costs': return <CostCenterView />;
       case 'team': return <TeamManagementView />; // Rota da Nova Tela
       case 'settings': return <SettingsView />;
+      case 'api': return <ApiGatewayView />;
+      case 'comms': return <CommunicationQueueView />;
       default: return <DashboardView />;
+      
     }
   };
 

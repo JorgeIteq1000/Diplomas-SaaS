@@ -1,4 +1,5 @@
 import React from 'react';
+import { Activity, Mail } from 'lucide-react'; // Lá no topo
 import { LayoutDashboard, Layers, ShieldAlert, History, CircleDollarSign, Settings, LogOut, GraduationCap, Users } from 'lucide-react';
 
 interface SidebarProps {
@@ -19,6 +20,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onLogout, use
     { id: 'costs', label: 'Centro de Custos', icon: <CircleDollarSign className="w-5 h-5" />, show: userRole === 'ADMIN' },
     { id: 'team', label: 'Gestão de Equipe', icon: <Users className="w-5 h-5" />, show: userRole === 'ADMIN' },
     { id: 'settings', label: 'Configurações', icon: <Settings className="w-5 h-5" />, show: userRole === 'ADMIN' },
+    { id: 'api', label: 'API & Webhooks', icon: <Activity className="w-5 h-5" />, show: userRole === 'ADMIN' },
+    { id: 'comms', label: 'Comunicação e Fila', icon: <Mail className="w-5 h-5" />, show: userRole === 'ADMIN' },
   ];
 
   // Filtra a lista para mostrar apenas os botões permitidos
