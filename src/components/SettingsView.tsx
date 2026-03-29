@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
-import { Key, Save, Server, Shield, Database, CheckCircle, Loader2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Key, Save, Server, Shield, Database, CheckCircle, Loader2, MessageSquareWarning, Link as LinkIcon } from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
 
-const SettingsView: React.FC = () => {
+export const SettingsView: React.FC = () => {
   const [salvando, setSalvando] = useState(false);
   const [salvoSucesso, setSalvoSucesso] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   // Aqui ficarão as chaves do cliente
   const [chaves, setChaves] = useState({
@@ -14,18 +16,63 @@ const SettingsView: React.FC = () => {
     senhaEsp: '••••••••••••'
   });
 
-  const handleSalvar = () => {
+  // Estado para o Webhook real que vai salvar no banco
+  const [webhookUrl, setWebhookUrl] = useState('');
+
+  // Busca a configuração atual no banco de dados ao carregar a página
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('config_sistema')
+          .select('bitrix_webhook_url')
+          .eq('id', 1)
+          .single();
+
+        if (error && error.code !== 'PGRST116') throw error; // Ignora erro se não encontrar a linha
+        if (data && data.bitrix_webhook_url) {
+          setWebhookUrl(data.bitrix_webhook_url);
+        }
+      } catch (error) {
+        console.error('Erro ao buscar configurações:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchConfig();
+  }, []);
+
+  const handleSalvar = async () => {
     setSalvando(true);
-    // Simulação visual de salvamento. Depois ligaremos no Supabase!
-    setTimeout(() => {
-      setSalvando(false);
+    
+    try {
+      // 1. Salva a URL real no banco de dados (Apenas o Webhook, pois o resto é mock no momento)
+      const { error } = await supabase
+        .from('config_sistema')
+        .upsert({ 
+          id: 1, 
+          bitrix_webhook_url: webhookUrl,
+          atualizado_em: new Date().toISOString()
+        });
+
+      if (error) throw error;
+
+      // 2. Simulação visual de salvamento com sucesso (feedback)
       setSalvoSucesso(true);
       setTimeout(() => setSalvoSucesso(false), 3000);
-    }, 1500);
+      
+    } catch (error: any) {
+      alert(`Erro ao salvar configurações: ${error.message}`);
+    } finally {
+      setSalvando(false);
+    }
   };
 
+  if (loading) return <div className="flex justify-center items-center h-[80vh]"><Loader2 className="w-10 h-10 animate-spin text-blue-600" /></div>;
+
   return (
-    <div className="p-8 max-w-4xl mx-auto space-y-8">
+    <div className="p-8 max-w-4xl mx-auto space-y-8 pb-20">
       <div>
         <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Cofre de Integrações</h1>
         <p className="text-slate-500 mt-1">Gerencie as credenciais e chaves de API da sua instituição de forma segura.</p>
@@ -107,6 +154,38 @@ const SettingsView: React.FC = () => {
         </div>
       </div>
 
+      {/* BLOCO WEBHOOKS / NOTIFICAÇÕES (NOVO) */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-slate-100 flex items-center gap-3 bg-slate-50">
+          <LinkIcon className="w-5 h-5 text-slate-500" />
+          <h2 className="text-xl font-semibold text-slate-800">Integrações Automáticas (Webhooks)</h2>
+        </div>
+
+        <div className="p-6">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
+            <h3 className="text-blue-800 font-semibold mb-2 flex items-center gap-2">
+              <MessageSquareWarning className="w-5 h-5" />
+              Notificações Bitrix24 (Mesa de Auditoria)
+            </h3>
+            <p className="text-sm text-blue-700 mb-4 leading-relaxed">
+              Sempre que a IA reprovar um documento, o sistema enviará um alerta automático para a sua equipa no Bitrix. Cole abaixo o Inbound Webhook gerado no seu painel do Bitrix24.
+            </p>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1">URL do Webhook Bitrix24</label>
+              <input
+                type="url"
+                value={webhookUrl}
+                onChange={(e) => setWebhookUrl(e.target.value)}
+                placeholder="https://sua-empresa.bitrix24.com/rest/1/codigo-aqui/"
+                className="w-full px-4 py-3 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-sm text-slate-600"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* BOTÃO DE SALVAR */}
       <div className="flex justify-end pt-4">
         <button 
           onClick={handleSalvar} 
@@ -120,5 +199,3 @@ const SettingsView: React.FC = () => {
     </div>
   );
 };
-
-export { SettingsView };
