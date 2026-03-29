@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { AlertTriangle, CheckCircle, XCircle, FileText, ChevronRight, Loader2, Save, ShieldAlert } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { AlertTriangle, CheckCircle, XCircle, FileText, ChevronRight, Loader2, Save, ShieldAlert, UserCheck, UploadCloud, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -20,6 +20,7 @@ interface AlunoErro {
   motivo_reprovacao: string;
   status: string;
   documento_erro_url?: string;
+  auditado_por?: string; // Campo de compliance
   dados_extraidos?: {
     dados_formulario?: {
       validacao_ia?: {
@@ -141,8 +142,22 @@ const AuditDeskView: React.FC = () => {
   const [alunoSelecionado, setAlunoSelecionado] = useState<AlunoErro | null>(null);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
+  const [usuarioLogado, setUsuarioLogado] = useState<string>('Auditor'); 
 
   const [formData, setFormData] = useState({ nome: '', rg: '', dataNascimento: '', dataColacao: '' });
+  
+  // Estado para a injeção do PDF
+  const [arquivoNovo, setArquivoNovo] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Pega o e-mail do usuário logado
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user?.email) {
+        setUsuarioLogado(data.user.email);
+      }
+    });
+  }, []);
 
   const fetchErros = async () => {
     try {
@@ -179,6 +194,7 @@ const AuditDeskView: React.FC = () => {
   const selecionarAluno = (aluno: AlunoErro) => {
     setAlunoSelecionado(aluno);
     setFormData({ nome: aluno.nome_planilha, rg: '', dataNascimento: '', dataColacao: '' });
+    setArquivoNovo(null); // Limpa o anexo se trocar de aluno
   };
 
   const getInputClass = (campo: 'nome' | 'rg' | 'data_nascimento' | 'data_colacao') => {
@@ -193,12 +209,37 @@ const AuditDeskView: React.FC = () => {
     if (!alunoSelecionado) return;
     try {
       setSalvando(true);
+      
+      let novoDocUrl = null;
+      
+      // 1. Faz o upload do novo PDF se o usuário tiver anexado um
+      if (arquivoNovo) {
+        const nomeArquivoStorage = `${alunoSelecionado.id}_correcao_${Date.now()}.pdf`;
+        const { error: uploadError } = await supabase.storage
+          .from('documentos_auditoria')
+          .upload(nomeArquivoStorage, arquivoNovo, { contentType: 'application/pdf', upsert: true });
+          
+        if (uploadError) throw uploadError;
+        
+        // Pega a URL pública gerada
+        const { data: publicUrlData } = supabase.storage.from('documentos_auditoria').getPublicUrl(nomeArquivoStorage);
+        novoDocUrl = publicUrlData.publicUrl;
+      }
+
+      // 2. Salva todas as informações no Supabase
       const { error } = await supabase
         .from('alunos_dossie')
         .update({
           status: 'AGUARDANDO_ROBO',
-          motivo_reprovacao: 'Corrigido manualmente pelo Auditor. Aguardando reprocessamento.',
-          correcoes_manuais: { nome: formData.nome, rg: formData.rg, dataNascimento: formData.dataNascimento, dataColacao: formData.dataColacao },
+          motivo_reprovacao: `Corrigido por ${usuarioLogado}. Aguardando reprocessamento.`,
+          correcoes_manuais: { 
+            nome: formData.nome, 
+            rg: formData.rg, 
+            dataNascimento: formData.dataNascimento, 
+            dataColacao: formData.dataColacao,
+            novo_documento_url: novoDocUrl // Injeta a URL no JSON para o Python ler!
+          },
+          auditado_por: usuarioLogado 
         })
         .eq('id', alunoSelecionado.id);
 
@@ -241,7 +282,7 @@ const AuditDeskView: React.FC = () => {
             Mesa de Auditoria
           </h2>
           <p className="text-sm text-slate-500 mt-1">
-            {alunosComErro.length} {alunosComErro.length === 1 ? 'documento' : 'documentos'} · ordenados por prioridade
+            {alunosComErro.length} {alunosComErro.length === 1 ? 'documento' : 'documentos'} pendentes
           </p>
         </div>
 
@@ -266,18 +307,15 @@ const AuditDeskView: React.FC = () => {
                       : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-slate-50'
                   }`}
                 >
-                  {/* Nome e seta */}
                   <div className="flex justify-between items-start mb-2">
                     <h4 className="font-semibold text-slate-800 line-clamp-1 text-sm">{aluno.nome_planilha}</h4>
                     <ChevronRight className={`w-4 h-4 flex-shrink-0 ml-1 ${isSelected ? 'text-blue-500' : 'text-slate-400'}`} />
                   </div>
 
-                  {/* CPF */}
                   <p className="text-xs font-mono text-slate-400 mb-3">
                     {aluno.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}
                   </p>
 
-                  {/* Mini barra de confiança geral */}
                   <div className="flex items-center gap-2 mb-3">
                     <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                       <div
@@ -290,7 +328,6 @@ const AuditDeskView: React.FC = () => {
                     </span>
                   </div>
 
-                  {/* Badge de prioridade */}
                   <BadgePrioridade score={sg} />
                 </div>
               );
@@ -323,13 +360,11 @@ const AuditDeskView: React.FC = () => {
           {/* Painel de correção */}
           <div className="w-full lg:w-1/2 bg-white overflow-y-auto p-6 lg:p-8">
 
-            {/* Cabeçalho com score geral */}
             <div className="flex items-start justify-between mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-slate-800">Parecer da Auditoria</h2>
                 <p className="text-sm text-slate-500 mt-0.5">{alunoSelecionado.nome_planilha}</p>
               </div>
-              {/* Score geral em destaque */}
               <div className={`flex flex-col items-center px-4 py-3 rounded-2xl border-2 ${
                 scoreGeral >= 75 ? 'border-emerald-200 bg-emerald-50' :
                 scoreGeral >= 40 ? 'border-amber-200 bg-amber-50' :
@@ -344,7 +379,6 @@ const AuditDeskView: React.FC = () => {
               </div>
             </div>
 
-            {/* Card de motivo */}
             <div className="bg-red-50 border border-red-200 rounded-xl p-5 mb-6">
               <h3 className="text-red-800 font-semibold mb-2 flex items-center gap-2 text-sm">
                 <AlertTriangle className="w-4 h-4" />
@@ -355,33 +389,56 @@ const AuditDeskView: React.FC = () => {
               </p>
             </div>
 
-            {/* ── SCORES POR CAMPO ──────────────────────────────────────── */}
+            {/* ── ÁREA DE INJEÇÃO DE PDF ────────────────────────────────── */}
+            <div className="bg-blue-50/50 border border-blue-200 rounded-xl p-5 mb-6">
+              <h3 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                <UploadCloud className="w-5 h-5 text-blue-600" />
+                Anexar Documento Legível (Opcional)
+              </h3>
+              <p className="text-xs text-slate-500 mb-4">
+                Se a imagem original estiver ilegível, anexe aqui o novo PDF para o robô baixar e substituir na pasta.
+              </p>
+              
+              <input 
+                type="file" 
+                accept=".pdf" 
+                className="hidden" 
+                ref={fileInputRef}
+                onChange={(e) => { 
+                  if (e.target.files?.[0]) setArquivoNovo(e.target.files[0]); 
+                }}
+              />
+              
+              {arquivoNovo ? (
+                <div className="flex items-center justify-between bg-white border border-blue-300 rounded-lg p-3">
+                  <div className="flex items-center gap-3">
+                    <FileText className="w-6 h-6 text-red-500" />
+                    <span className="text-sm font-medium text-slate-700 truncate max-w-[200px]">{arquivoNovo.name}</span>
+                  </div>
+                  <button onClick={() => setArquivoNovo(null)} className="p-1 hover:bg-slate-100 rounded-md transition-colors">
+                    <X className="w-4 h-4 text-slate-500" />
+                  </button>
+                </div>
+              ) : (
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full py-4 border-2 border-dashed border-blue-300 rounded-lg text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors"
+                >
+                  Clique para selecionar o PDF limpo
+                </button>
+              )}
+            </div>
+
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mb-6">
               <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
                 <span className="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
                 Confiança por Campo
               </h3>
               <div className="space-y-4">
-                <ConfiancaBar
-                  label="Nome Completo"
-                  score={scoreNome}
-                  statusTexto={validacaoAtual?.nome}
-                />
-                <ConfiancaBar
-                  label="Número do RG"
-                  score={scoreRg}
-                  statusTexto={validacaoAtual?.rg}
-                />
-                <ConfiancaBar
-                  label="Data de Nascimento"
-                  score={scoreNasc}
-                  statusTexto={validacaoAtual?.data_nascimento}
-                />
-                <ConfiancaBar
-                  label="Data de Colação"
-                  score={scoreColacao}
-                  statusTexto={validacaoAtual?.data_colacao}
-                />
+                <ConfiancaBar label="Nome Completo" score={scoreNome} statusTexto={validacaoAtual?.nome} />
+                <ConfiancaBar label="Número do RG" score={scoreRg} statusTexto={validacaoAtual?.rg} />
+                <ConfiancaBar label="Data de Nascimento" score={scoreNasc} statusTexto={validacaoAtual?.data_nascimento} />
+                <ConfiancaBar label="Data de Colação" score={scoreColacao} statusTexto={validacaoAtual?.data_colacao} />
               </div>
             </div>
 
@@ -391,7 +448,6 @@ const AuditDeskView: React.FC = () => {
                 Correção Manual
               </h3>
 
-              {/* Nome */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   Nome Completo Correto
@@ -411,7 +467,6 @@ const AuditDeskView: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                {/* Data de Nascimento */}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Data de Nascimento
@@ -429,8 +484,6 @@ const AuditDeskView: React.FC = () => {
                     placeholder="DD/MM/AAAA"
                   />
                 </div>
-
-                {/* RG */}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Número do RG
@@ -450,7 +503,6 @@ const AuditDeskView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Data de Colação */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   Data de Colação de Grau
@@ -479,7 +531,12 @@ const AuditDeskView: React.FC = () => {
                 </div>
               )}
 
-              {/* Botão de ação */}
+              {/* Registro de Auditoria / Compliance */}
+              <div className="mt-4 flex items-center gap-2 text-xs text-slate-500">
+                <UserCheck className="w-4 h-4" />
+                <span>Esta correção será registrada em nome de: <strong>{usuarioLogado}</strong></span>
+              </div>
+
               <div className="pt-4 border-t border-slate-100">
                 <button
                   onClick={handleForcarAprovacao}
@@ -490,7 +547,7 @@ const AuditDeskView: React.FC = () => {
                     ? <Loader2 className="w-5 h-5 animate-spin" />
                     : <Save className="w-5 h-5" />
                   }
-                  Forçar Aprovação & Reprocessar
+                  Forçar Aprovação & Injetar Correções
                 </button>
               </div>
             </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Download, FileCode, Lock, CheckCircle, Loader2, Filter, Edit2, Save, X } from 'lucide-react';
+import { Search, Download, FileCode, Lock, CheckCircle, Loader2, Filter, Edit2, Save, X, ArrowDownAZ, ArrowUpZA } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
 interface LoteInfo {
@@ -27,11 +27,14 @@ interface AlunoEmitido {
 export const HistoryView: React.FC = () => {
   const [alunos, setAlunos] = useState<AlunoEmitido[]>([]);
   const [lotesDisponiveis, setLotesDisponiveis] = useState<LoteInfo[]>([]);
+  const [cursosDisponiveis, setCursosDisponiveis] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Filtros
+  // Filtros e Ordenação
   const [busca, setBusca] = useState('');
   const [filtroLote, setFiltroLote] = useState('TODOS');
+  const [filtroCurso, setFiltroCurso] = useState('TODOS');
+  const [ordemAlfabetica, setOrdemAlfabetica] = useState<'ASC' | 'DESC'>('ASC');
 
   // Estados para a edição do Lote na tabela
   const [editandoLoteAlunoId, setEditandoLoteAlunoId] = useState<string | null>(null);
@@ -46,11 +49,16 @@ export const HistoryView: React.FC = () => {
       const { data: alunosData, error: alunosError } = await supabase
         .from('alunos_dossie')
         .select('*, lotes(id, nome_lote)')
-        .eq('status', 'EMITIDO_SOLIS')
-        .order('nome_planilha', { ascending: true });
+        .eq('status', 'EMITIDO_SOLIS');
 
       if (alunosError) throw alunosError;
-      setAlunos(alunosData as AlunoEmitido[]);
+      
+      const alunosCarregados = alunosData as AlunoEmitido[];
+      setAlunos(alunosCarregados);
+
+      // Extrai a lista de cursos únicos para o filtro dinâmico
+      const cursosUnicos = Array.from(new Set(alunosCarregados.map(a => a.curso_alvo))).filter(Boolean).sort();
+      setCursosDisponiveis(cursosUnicos);
 
       // 2. Busca todos os lotes globais para o Filtro e para o Dropdown de Troca
       const { data: lotesData, error: lotesError } = await supabase
@@ -109,12 +117,21 @@ export const HistoryView: React.FC = () => {
     }
   };
 
-  // Aplica os filtros combinados (Texto + Lote)
-  const alunosFiltrados = alunos.filter(a => {
-    const matchBusca = a.nome_planilha.toLowerCase().includes(busca.toLowerCase()) || a.cpf.includes(busca);
-    const matchLote = filtroLote === 'TODOS' || a.lote_id === filtroLote;
-    return matchBusca && matchLote;
-  });
+  // Aplica os filtros combinados (Texto + Lote + Curso) e ordena (A-Z ou Z-A)
+  const alunosFiltradosEOrdenados = alunos
+    .filter(a => {
+      const matchBusca = a.nome_planilha.toLowerCase().includes(busca.toLowerCase()) || a.cpf.includes(busca);
+      const matchLote = filtroLote === 'TODOS' || a.lote_id === filtroLote;
+      const matchCurso = filtroCurso === 'TODOS' || a.curso_alvo === filtroCurso;
+      return matchBusca && matchLote && matchCurso;
+    })
+    .sort((a, b) => {
+      if (ordemAlfabetica === 'ASC') {
+        return a.nome_planilha.localeCompare(b.nome_planilha);
+      } else {
+        return b.nome_planilha.localeCompare(a.nome_planilha);
+      }
+    });
 
   if (loading) {
     return (
@@ -128,11 +145,13 @@ export const HistoryView: React.FC = () => {
     <div className="p-8 max-w-7xl mx-auto space-y-8 h-full flex flex-col">
       <div>
         <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Acervo de Documentos</h1>
-        <p className="text-slate-500 mt-2">Pesquise, filtre por Lotes e baixe os documentos emitidos.</p>
+        <p className="text-slate-500 mt-2">Pesquise, filtre por Lotes/Cursos e baixe os documentos emitidos.</p>
       </div>
 
-      {/* BARRA DE PESQUISA E FILTRO */}
-      <div className="flex gap-4">
+      {/* BARRA DE PESQUISA E FILTROS */}
+      <div className="flex gap-4 items-center">
+        
+        {/* Pesquisa por Texto */}
         <div className="relative flex-1">
           <Search className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
           <input 
@@ -144,14 +163,15 @@ export const HistoryView: React.FC = () => {
           />
         </div>
 
-        <div className="relative w-80">
+        {/* Filtro por Lote */}
+        <div className="relative w-64">
           <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
             <Filter className="w-5 h-5" />
           </div>
           <select
             value={filtroLote}
             onChange={(e) => setFiltroLote(e.target.value)}
-            className="w-full pl-12 pr-10 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none shadow-sm transition-all appearance-none text-slate-700 font-medium"
+            className="w-full pl-12 pr-10 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none shadow-sm transition-all appearance-none text-slate-700 font-medium truncate"
           >
             <option value="TODOS">Todos os Lotes</option>
             {lotesDisponiveis.map(lote => (
@@ -160,11 +180,42 @@ export const HistoryView: React.FC = () => {
               </option>
             ))}
           </select>
-          {/* Ícone de Seta do Select */}
           <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
             <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
           </div>
         </div>
+
+        {/* Filtro por Curso */}
+        <div className="relative w-64">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+            <Filter className="w-5 h-5" />
+          </div>
+          <select
+            value={filtroCurso}
+            onChange={(e) => setFiltroCurso(e.target.value)}
+            className="w-full pl-12 pr-10 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none shadow-sm transition-all appearance-none text-slate-700 font-medium truncate"
+          >
+            <option value="TODOS">Todos os Cursos</option>
+            {cursosDisponiveis.map(curso => (
+              <option key={curso} value={curso}>
+                {curso}
+              </option>
+            ))}
+          </select>
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+            <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+          </div>
+        </div>
+
+        {/* Botão de Ordem Alfabética */}
+        <button 
+          onClick={() => setOrdemAlfabetica(prev => prev === 'ASC' ? 'DESC' : 'ASC')}
+          className="p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors shadow-sm text-slate-700 flex items-center justify-center flex-shrink-0"
+          title="Alternar Ordem Alfabética"
+        >
+          {ordemAlfabetica === 'ASC' ? <ArrowDownAZ className="w-5 h-5" /> : <ArrowUpZA className="w-5 h-5" />}
+        </button>
+
       </div>
 
       {/* TABELA DE ALUNOS */}
@@ -181,14 +232,14 @@ export const HistoryView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {alunosFiltrados.length === 0 ? (
+              {alunosFiltradosEOrdenados.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="p-8 text-center text-slate-500">
                     Nenhum aluno encontrado ou emitido ainda para este filtro.
                   </td>
                 </tr>
               ) : (
-                alunosFiltrados.map((aluno) => {
+                alunosFiltradosEOrdenados.map((aluno) => {
                   const urls = aluno.dados_extraidos?.urls_finais;
                   
                   return (
