@@ -1158,12 +1158,38 @@ def processar_aluno(aluno_db, t_esp, t_solis, mods_w, chaves_pdf, listas_hosting
                 nome_arquivo_storage = f"{aluno_id}_{nome_arquivo_mesclado}"
                 with open(caminho_mesclado, "rb") as f:
                     supabase.storage.from_("documentos_auditoria").upload(nome_arquivo_storage, f, file_options={"upsert": "true", "content-type": "application/pdf"})
-                url_publica = supabase.storage.from_("documentos_auditoria").get_public_url(nome_arquivo_storage)
+                url_publica = supabase.storage.from_("documentos_auditoria").get_public_url(nome_arquivo_storage).get("publicUrl")
         except: pass
 
         dados_salvar_erro = {'status': 'REPROVADO_IA', 'motivo_reprovacao': str(de), 'documento_erro_url': url_publica}
         if getattr(de, 'dossie_parcial', None): dados_salvar_erro['dados_extraidos'] = de.dossie_parcial
         supabase.table('alunos_dossie').update(dados_salvar_erro).eq('id', aluno_id).execute()
+        
+        # --- INÍCIO DA ADIÇÃO: WEBHOOK DO BITRIX ---
+        webhook_bitrix = os.getenv("BITRIX_WEBHOOK_URL")
+        if webhook_bitrix:
+            logger.info(f"{tracker} 🔔 [WEBHOOK] Iniciando notificação de diligência para o Bitrix...")
+            try:
+                # Monta a mensagem que vai chegar no Bitrix para a equipe
+                payload_bitrix = {
+                    "aluno": nome_bruto,
+                    "cpf": cpf,
+                    "motivo_reprovacao": str(de),
+                    # Ajuste o domínio abaixo para a URL real onde sua aplicação React está hospedada
+                    "link_auditoria": "https://seu-sistema.com/auditoria" 
+                }
+                
+                # Dispara o aviso via POST
+                resposta_bitrix = requests.post(webhook_bitrix, json=payload_bitrix, timeout=15)
+                
+                if resposta_bitrix.ok:
+                    logger.info(f"{tracker} ✅ [WEBHOOK] Equipe notificada com sucesso no Bitrix!")
+                else:
+                    logger.warning(f"{tracker} ⚠️ [WEBHOOK] O Bitrix retornou status {resposta_bitrix.status_code}")
+                    
+            except Exception as erro_webhook:
+                logger.error(f"{tracker} ❌ [WEBHOOK] Falha ao comunicar com o Bitrix: {erro_webhook}")
+        # --- FIM DA ADIÇÃO ---
         
     except Exception as e:
         logger.error(f"{tracker} ❌ Falha geral: {e}", exc_info=True)
