@@ -1129,6 +1129,44 @@ def notificar_aluno(aluno_dados, supabase):
                 server.send_message(msg)
                 server.quit()
                 logger.info("✅ [EMAIL] Enviado com sucesso!")
+
+                # --- NOVA ADIÇÃO: SALVAR CÓPIA NA CAIXA DE ENVIADOS (IMAP) ---
+                try:
+                    import imaplib
+                    import time
+                    
+                    # Deduz o servidor IMAP (Ex: se for smtp.hostinger.com, vira imap.hostinger.com)
+                    imap_host = config['smtp_host'].replace('smtp', 'imap')
+                    logger.info(f"💾 [EMAIL] Salvando cópia de auditoria na nuvem via {imap_host}...")
+                    
+                    # Conecta na porta 993 (Padrão universal IMAP SSL)
+                    imap = imaplib.IMAP4_SSL(imap_host, 993)
+                    imap.login(config['smtp_user'], config['smtp_password'])
+                    
+                    # Nomes comuns que os provedores (Hostinger/Gmail) dão à pasta de saída
+                    pastas_saida = ['"Sent"', '"Enviados"', '"INBOX.Sent"', '"Itens Enviados"', '"Sent Messages"']
+                    copia_salva = False
+                    
+                    for pasta in pastas_saida:
+                        try:
+                            # Append empurra a mensagem pronta direto para a pasta como "Lida" (\Seen)
+                            status, _ = imap.append(pasta, '\\Seen', imaplib.Time2Internaldate(time.time()), msg.as_bytes())
+                            if status == 'OK':
+                                logger.info(f"✅ [EMAIL] Cópia guardada na sua pasta {pasta}!")
+                                copia_salva = True
+                                break
+                        except Exception:
+                            # Se a pasta não existir no provedor, tenta a próxima da lista silenciosamente
+                            continue
+                            
+                    if not copia_salva:
+                        logger.warning("⚠️ [EMAIL] Mensagem entregue, mas não consegui achar a pasta 'Enviados' correta para guardar cópia.")
+                        
+                    imap.logout()
+                except Exception as e_imap:
+                    logger.warning(f"⚠️ [EMAIL] Mensagem entregue, mas erro ao conectar no IMAP para salvar cópia: {e_imap}")
+                # --- FIM DA ADIÇÃO ---
+
             except Exception as e_email:
                 logger.error(f"❌ [EMAIL] Falha ao enviar: {e_email}")
         else:
