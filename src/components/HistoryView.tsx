@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Download, FileCode, Lock, CheckCircle, Loader2, Filter, Edit2, Save, X, ArrowDownAZ, ArrowUpZA, Send } from 'lucide-react';
+import { Search, Download, FileCode, Lock, CheckCircle, Loader2, Filter, Edit2, Save, X, ArrowDownAZ, ArrowUpZA, Send, Link } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
 interface LoteInfo {
@@ -40,6 +40,54 @@ export const HistoryView: React.FC = () => {
   const [editandoLoteAlunoId, setEditandoLoteAlunoId] = useState<string | null>(null);
   const [novoLoteIdSelecionado, setNovoLoteIdSelecionado] = useState<string>('');
   const [atualizandoLote, setAtualizandoLote] = useState(false);
+
+  // Estados da vinculação de PDF
+  const [uploadingPdfId, setUploadingPdfId] = useState<string | null>(null);
+
+  const handleVincularLinkDrive = async (alunoId: string) => {
+    const linkDrive = window.prompt("🔗 Insira o link oficial do Google Drive para o Diploma Registrado:");
+    if (!linkDrive || linkDrive.trim() === '') return;
+
+    try {
+      setUploadingPdfId(alunoId);
+      
+      const alunoAtual = alunos.find(a => a.id === alunoId);
+      if (!alunoAtual) return;
+
+      const dadosExtraidosAtuais = alunoAtual.dados_extraidos || {};
+      const urlsFinaisAtuais = dadosExtraidosAtuais.urls_finais || {};
+
+      const novosDadosExtraidos = {
+        ...dadosExtraidosAtuais,
+        urlsFinais: {
+          ...urlsFinaisAtuais,
+          diploma_pdf: linkDrive.trim()
+        },
+        urls_finais: {
+          ...urlsFinaisAtuais,
+          diploma_pdf: linkDrive.trim()
+        }
+      };
+
+      const { error: updateError } = await supabase
+        .from('alunos_dossie')
+        .update({ dados_extraidos: novosDadosExtraidos })
+        .eq('id', alunoId);
+
+      if (updateError) throw updateError;
+
+      setAlunos(alunosAtuais => 
+        alunosAtuais.map(aluno => 
+          aluno.id === alunoId ? { ...aluno, dados_extraidos: novosDadosExtraidos } : aluno
+        )
+      );
+      
+    } catch (error: any) {
+      alert(`Falha ao vincular o link: ${error.message}`);
+    } finally {
+      setUploadingPdfId(null);
+    }
+  };
 
   const carregarDados = async () => {
     try {
@@ -382,12 +430,14 @@ export const HistoryView: React.FC = () => {
                               <Download className="w-4 h-4" /> Diploma PDF
                             </a>
                           ) : (
-                            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-400 text-xs font-medium rounded-lg cursor-not-allowed group relative">
-                              <Lock className="w-3.5 h-3.5" /> Diploma PDF
-                              <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block w-48 p-2 bg-slate-800 text-white text-xs text-center rounded shadow-lg z-10">
-                                Aguardando o Registro oficial da Instituição de Ensino.
-                              </div>
-                            </div>
+                            <button 
+                              onClick={() => handleVincularLinkDrive(aluno.id)}
+                              disabled={uploadingPdfId === aluno.id}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-medium rounded-lg transition-colors group relative border border-slate-300 border-dashed hover:border-slate-400"
+                            >
+                              {uploadingPdfId === aluno.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link className="w-3.5 h-3.5" />} 
+                              Vincular Link GDrive
+                            </button>
                           )}
 
                         </div>
