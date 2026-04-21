@@ -14,9 +14,9 @@ const DashboardView: React.FC = () => {
   const [dadosGrafico, setDadosGrafico] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const carregarDados = async () => {
+  const carregarDados = async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       // 1. Buscar Alunos para Métricas
       const { data: alunos, error: errAlunos } = await supabase.from('alunos_dossie').select('status, data_processamento');
       if (errAlunos) throw errAlunos;
@@ -48,17 +48,17 @@ const DashboardView: React.FC = () => {
     } catch (error) {
       console.error('Erro ao carregar dashboard:', error);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
     carregarDados();
 
-    // Inscrição Realtime para atualizar o Dashboard ao vivo!
+    // Inscrição Realtime para atualizar o Dashboard ao vivo sem spinner
     const inscricao = supabase.channel('dashboard-updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'alunos_dossie' }, () => { carregarDados(); })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'lotes' }, () => { carregarDados(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'alunos_dossie' }, () => { carregarDados(true); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lotes' }, () => { carregarDados(true); })
       .subscribe();
 
     return () => { supabase.removeChannel(inscricao); };

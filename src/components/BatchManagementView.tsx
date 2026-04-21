@@ -38,9 +38,9 @@ const BatchManagementView: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const fetchLotes = async () => {
+  const fetchLotes = async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       const { data, error } = await supabase
         .from("lotes")
         .select("*")
@@ -51,7 +51,7 @@ const BatchManagementView: React.FC = () => {
     } catch (error) {
       console.error("❌ Erro ao buscar lotes:", error);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
@@ -64,7 +64,7 @@ const BatchManagementView: React.FC = () => {
         "postgres_changes",
         { event: "*", schema: "public", table: "lotes" },
         () => {
-          fetchLotes();
+          fetchLotes(true);
         },
       )
       .subscribe();
