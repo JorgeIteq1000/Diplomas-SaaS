@@ -1378,7 +1378,7 @@ def motor_de_disparos_autonomo():
                     "telefone": str(aluno.get("telefone", "")),
                     "curso": str(aluno.get("curso_alvo", "")),
                     # Pega os links do Storage que a esteira já salvou!
-                    "link_diploma": urls.get("diploma_xml") or "Link indisponível", 
+                    "link_diploma": urls.get("diploma_pdf") or "Link indisponível", 
                     "link_historico": urls.get("historico_pdf") or "Link indisponível",
                     "codigo_mec": "Registrado com Sucesso" # Aqui podemos ajustar depois quando houver
                 }
