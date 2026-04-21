@@ -24,25 +24,34 @@ function App() {
     let mounted = true;
 
     const carregarSessaoEPerfil = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (session && mounted) {
-        setSessao(session);
-        // Vai na tabela verificar se é Admin ou Colaborador
-        const { data } = await supabase
-          .from('colaboradores')
-          .select('perfil')
-          .eq('email', session.user.email)
-          .single();
-          
-        if (data) {
-          setUserRole(data.perfil);
-        } else {
-          // Se o e-mail não estiver na tabela, por segurança, ele é apenas Colaborador
-          setUserRole('COLABORADOR');
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session && mounted) {
+          setSessao(session);
+          try {
+            // Vai na tabela verificar se é Admin ou Colaborador
+            const { data } = await supabase
+              .from('colaboradores')
+              .select('perfil')
+              .eq('email', session.user.email)
+              .single();
+              
+            if (data) {
+              setUserRole(data.perfil);
+            } else {
+              // Se o e-mail não estiver na tabela, por segurança, ele é apenas Colaborador
+              setUserRole('COLABORADOR');
+            }
+          } catch (e) {
+            setUserRole('COLABORADOR');
+          }
         }
+      } catch (e) {
+        console.error("Erro auth:", e);
+      } finally {
+        if (mounted) setLoading(false);
       }
-      if (mounted) setLoading(false);
     };
 
     carregarSessaoEPerfil();
@@ -51,13 +60,17 @@ function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session) {
         setSessao(session);
-        const { data } = await supabase
-          .from('colaboradores')
-          .select('perfil')
-          .eq('email', session.user.email)
-          .single();
-        if (data) setUserRole(data.perfil);
-        else setUserRole('COLABORADOR');
+        try {
+          const { data } = await supabase
+            .from('colaboradores')
+            .select('perfil')
+            .eq('email', session.user.email)
+            .single();
+          if (data) setUserRole(data.perfil);
+          else setUserRole('COLABORADOR');
+        } catch (e) {
+          setUserRole('COLABORADOR');
+        }
       } else {
         setSessao(null);
         setUserRole(null);
